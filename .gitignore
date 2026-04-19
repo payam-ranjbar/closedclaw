@@ -4,6 +4,7 @@ dist/
 /workspace/
 /docs/
 /.claude/
+CLAUDE.md
 *.log
 coverage/
 .DS_Store
