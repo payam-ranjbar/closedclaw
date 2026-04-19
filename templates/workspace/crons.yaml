@@ -1,0 +1,8 @@
+- id: rotate-system-log
+  schedule: "0 0 * * *"
+  agent: host
+  payload: |
+    System task: check ./system.log size. If > 10 MB, rename to
+    system.log.<date> and start fresh. Report what you did.
+  reply_to: null
+  timeoutMs: 120000

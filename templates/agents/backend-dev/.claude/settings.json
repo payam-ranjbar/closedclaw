@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart":     [{ "matcher": "*", "hooks": [{ "type": "command", "command": "closedclaw hook SessionStart" }] }],
+    "SessionEnd":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "closedclaw hook SessionEnd" }] }],
+    "UserPromptSubmit": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "closedclaw hook UserPromptSubmit" }] }],
+    "SubagentStart":    [{ "matcher": "*", "hooks": [{ "type": "command", "command": "closedclaw hook SubagentStart" }] }],
+    "SubagentStop":     [{ "matcher": "*", "hooks": [{ "type": "command", "command": "closedclaw hook SubagentStop" }] }],
+    "Stop":             [{ "matcher": "*", "hooks": [{ "type": "command", "command": "closedclaw hook Stop" }] }]
+  }
+}

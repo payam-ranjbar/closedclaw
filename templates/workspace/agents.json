@@ -1,0 +1,23 @@
+{
+  "host": {
+    "name": "host",
+    "cwd": "{{WORKSPACE}}/agents/host",
+    "sessionId": null,
+    "createdAt": "{{NOW}}",
+    "lastActiveAt": null
+  },
+  "backend-dev": {
+    "name": "backend-dev",
+    "cwd": "{{WORKSPACE}}/agents/backend-dev",
+    "sessionId": null,
+    "createdAt": "{{NOW}}",
+    "lastActiveAt": null
+  },
+  "frontend-dev": {
+    "name": "frontend-dev",
+    "cwd": "{{WORKSPACE}}/agents/frontend-dev",
+    "sessionId": null,
+    "createdAt": "{{NOW}}",
+    "lastActiveAt": null
+  }
+}

@@ -1,0 +1,8 @@
+- id: backend-nightly-dream
+  schedule: "0 3 * * *"
+  agent: backend-dev
+  payload: |
+    Dream: review today's activity in this workspace. Note smells,
+    unfinished work, ideas for tomorrow. Save to ./dreams/<ISO-date>.md.
+  reply_to: null
+  timeoutMs: 600000
