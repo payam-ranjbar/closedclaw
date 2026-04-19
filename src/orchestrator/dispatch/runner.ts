@@ -1,7 +1,7 @@
-import { spawn as realSpawn, type ChildProcess } from "node:child_process";
+import crossSpawn from "cross-spawn";
+import type { ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { readAgents } from "../state.js";
-import { resolveBin } from "../util/resolve-bin.js";
 import type { Runner, RunnerOutcome } from "./contract.js";
 
 export type SpawnFn = (cmd: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv }) => ChildProcess;
@@ -11,7 +11,7 @@ interface Options {
 }
 
 export function createRunner(opts: Options = {}): Runner {
-  const spawn = opts.spawn ?? realSpawn;
+  const spawn = opts.spawn ?? (crossSpawn as SpawnFn);
 
   return {
     async run({ agent, payload, workspace }): Promise<RunnerOutcome> {
@@ -19,12 +19,15 @@ export function createRunner(opts: Options = {}): Runner {
       const record = registry[agent];
       if (!record) throw new Error(`unknown agent: ${agent}`);
 
-      const args = ["-p", payload, "--output-format", "stream-json", "--verbose"];
+      const args = [
+        "-p", payload,
+        "--output-format", "stream-json", "--verbose",
+        "--permission-mode", "bypassPermissions",
+      ];
       if (record.sessionId) args.push("--resume", record.sessionId);
       if (record.model) args.push("--model", record.model);
 
-      const bin = resolveBin("claude");
-      const child = spawn(bin.command, [...bin.prefixArgs, ...args], {
+      const child = spawn("claude", args, {
         cwd: record.cwd,
         env: { ...process.env, CLOSEDCLAW_WORKSPACE: workspace },
       });
