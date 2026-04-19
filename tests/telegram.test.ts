@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import express from "express";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -204,6 +204,100 @@ describe("TelegramChannel", () => {
       }));
     } finally {
       server2.close();
+    }
+  });
+
+  it("signalThinking(true) sends sendChatAction immediately and again on the 4s tick", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async (input) => { calls.push(String(input)); return new Response("{}"); },
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async () => {},
+      });
+      ch.signalThinking!({ channel: "telegram", conversationId: "99" }, true);
+      await Promise.resolve();
+      const typingCalls = () => calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(typingCalls()).toBe(1);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(typingCalls()).toBe(2);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(typingCalls()).toBe(3);
+      ch.signalThinking!({ channel: "telegram", conversationId: "99" }, false);
+      await ch.stop();
+    } finally {
+      server2.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("signalThinking(false) clears the interval and stops further sendChatAction calls", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async (input) => { calls.push(String(input)); return new Response("{}"); },
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async () => {},
+      });
+      const ref = { channel: "telegram", conversationId: "99" };
+      ch.signalThinking!(ref, true);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(4000);
+      const before = calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(before).toBe(2);
+      ch.signalThinking!(ref, false);
+      await vi.advanceTimersByTimeAsync(20000);
+      const after = calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(after).toBe(2);
+    } finally {
+      server2.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("signalThinking(true) twice on the same conversation replaces the existing timer (no stacking)", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async (input) => { calls.push(String(input)); return new Response("{}"); },
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async () => {},
+      });
+      const ref = { channel: "telegram", conversationId: "99" };
+      ch.signalThinking!(ref, true);
+      await Promise.resolve();
+      ch.signalThinking!(ref, true);
+      await Promise.resolve();
+      const beforeTicks = calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(beforeTicks).toBe(2);
+      await vi.advanceTimersByTimeAsync(4000);
+      const afterOneTick = calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(afterOneTick).toBe(3);
+      await ch.stop();
+    } finally {
+      server2.close();
+      vi.useRealTimers();
     }
   });
 });

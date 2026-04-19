@@ -28,6 +28,7 @@ export class TelegramChannel implements Channel {
   private token = "";
   private fetcher: Fetcher;
   private logEntry: ChannelContext["log"] = async () => {};
+  private timers = new Map<string, NodeJS.Timeout>();
 
   constructor(private readonly opts: Options = {}) {
     this.fetcher = opts.fetcher ?? fetch;
@@ -83,7 +84,10 @@ export class TelegramChannel implements Channel {
     }
   }
 
-  async stop(): Promise<void> {}
+  async stop(): Promise<void> {
+    for (const handle of this.timers.values()) clearInterval(handle);
+    this.timers.clear();
+  }
 
   async reply(ref: ChannelRef, text: string): Promise<void> {
     if (!this.token) return;
@@ -101,6 +105,32 @@ export class TelegramChannel implements Channel {
       }
     } catch (err) {
       await this.log({ event: "telegram.reply.failed", chatId, error: String(err) });
+    }
+  }
+
+  signalThinking(ref: ChannelRef, on: boolean): void {
+    const key = ref.conversationId;
+    const existing = this.timers.get(key);
+    if (existing) {
+      clearInterval(existing);
+      this.timers.delete(key);
+    }
+    if (!on) return;
+    void this.sendTyping(ref);
+    const handle = setInterval(() => { void this.sendTyping(ref); }, 4000);
+    this.timers.set(key, handle);
+  }
+
+  private async sendTyping(ref: ChannelRef): Promise<void> {
+    if (!this.token) return;
+    try {
+      await this.fetcher(`https://api.telegram.org/bot${this.token}/sendChatAction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: Number(ref.conversationId), action: "typing" }),
+      });
+    } catch {
+      // best-effort; intentionally swallowed
     }
   }
 
