@@ -1,48 +1,46 @@
 # closedclaw
 
-Claude-Code-native agent orchestrator. Route messages from channels (Telegram) and cron triggers to a persistent host Claude Code session that delegates to specialist worker sessions.
+A small Node app that runs a group of Claude Code agents on your machine. You message it on Telegram, it picks the right agent for your request, and replies back.
 
-## Requirements
+## What you need
 
-- Node.js >= 20
-- `claude` CLI installed and logged in (`claude login`)
+- Node 20 or newer
+- The claude CLI installed and logged in
+- A Telegram bot token (get one from @BotFather)
+- A public URL pointing at your local port 3000 (a cloudflared tunnel works fine)
 
-## Install
+## Setup
 
 ```
 npm install -g closedclaw
 closedclaw init
 ```
 
-Edit `~/.closedclaw/.env`, then:
+Open `~/.closedclaw/.env` and fill in:
+
+```
+PORT=3000
+PUBLIC_BASE_URL=https://your-public-url
+TELEGRAM_BOT_TOKEN=your-bot-token
+```
+
+Then:
 
 ```
 closedclaw doctor
 closedclaw start
 ```
 
+Send your bot a message. That's it.
+
+## Adding a new agent
+
+```
+closedclaw add-agent my-agent
+```
+
+Then open `~/.closedclaw/agents/my-agent/CLAUDE.md` and describe what the agent does.
+
 ## Docker
 
-```
-claude login
-cp .env.example .env
-# fill in TELEGRAM_BOT_TOKEN, CLOUDFLARE_TUNNEL_TOKEN, PUBLIC_BASE_URL
-docker compose up -d
-docker compose exec closedclaw closedclaw init
-docker compose restart closedclaw
-```
-
-## Workspace resolution
-
-1. `--workspace <path>`
-2. `CLOSEDCLAW_WORKSPACE`
-3. `./workspace/` if present
-4. `~/.closedclaw/`
-
-## Commands
-
-- `closedclaw init` — scaffold a workspace
-- `closedclaw start` — run the orchestrator
-- `closedclaw add-agent <name>` — scaffold a new worker
-- `closedclaw status` — show agents + recent telemetry
-- `closedclaw doctor` — diagnostics
+There is a `docker-compose.yml` if you'd rather run it in a container. Copy `.env.example` to `.env`, fill it in, then `docker compose up`.
