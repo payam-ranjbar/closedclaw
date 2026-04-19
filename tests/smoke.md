@@ -4,6 +4,7 @@
 - `claude` CLI installed, `claude login` completed on host.
 - A Telegram bot token in `.env`.
 - `cloudflared` tunnel pointing to your local port 3000 (or equivalent).
+- `npm run build && npm link` so the `closedclaw` CLI is on PATH globally (required for the hook commands in worker `.claude/settings.json` to resolve).
 
 ## S1 — init + doctor green
 ```
