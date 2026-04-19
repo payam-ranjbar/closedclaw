@@ -119,6 +119,58 @@ describe("TelegramChannel", () => {
     }));
   });
 
+  it("logs telegram.reply.sent with status on a 2xx sendMessage response", async () => {
+    const localLog: object[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async () => new Response("{}", { status: 200 }),
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async (entry) => { localLog.push(entry); },
+      });
+      await ch.reply({ channel: "telegram", conversationId: "99" }, "hi back");
+      expect(localLog).toContainEqual(expect.objectContaining({
+        channel: "telegram",
+        event: "telegram.reply.sent",
+        chatId: "99",
+        status: 200,
+      }));
+    } finally {
+      server2.close();
+    }
+  });
+
+  it("logs telegram.reply.failed when sendMessage returns a non-2xx status", async () => {
+    const localLog: object[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async () => new Response("{}", { status: 500 }),
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async (entry) => { localLog.push(entry); },
+      });
+      await ch.reply({ channel: "telegram", conversationId: "99" }, "x");
+      expect(localLog).toContainEqual(expect.objectContaining({
+        channel: "telegram",
+        event: "telegram.reply.failed",
+        chatId: "99",
+        error: "HTTP 500",
+      }));
+    } finally {
+      server2.close();
+    }
+  });
+
   it("logs telegram.ingest.failed when bus.submit rejects", async () => {
     const { app: app2, server: server2, port: port2 } = await startApp();
     const localLog: object[] = [];

@@ -87,11 +87,21 @@ export class TelegramChannel implements Channel {
 
   async reply(ref: ChannelRef, text: string): Promise<void> {
     if (!this.token) return;
-    await this.fetcher(`https://api.telegram.org/bot${this.token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: Number(ref.conversationId), text }),
-    });
+    const chatId = ref.conversationId;
+    try {
+      const res = await this.fetcher(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: Number(chatId), text }),
+      });
+      if (res.status >= 200 && res.status < 300) {
+        await this.log({ event: "telegram.reply.sent", chatId, status: res.status });
+      } else {
+        await this.log({ event: "telegram.reply.failed", chatId, error: `HTTP ${res.status}` });
+      }
+    } catch (err) {
+      await this.log({ event: "telegram.reply.failed", chatId, error: String(err) });
+    }
   }
 
   private log(event: TelegramLogEvent): Promise<void> {
