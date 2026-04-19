@@ -5,6 +5,8 @@ import type {
   DispatchErrorCode,
   Runner,
 } from "./contract.js";
+import { promises as fs } from "node:fs";
+import { join as pathJoin } from "node:path";
 
 interface Options {
   workspace: string;
@@ -25,6 +27,19 @@ export interface Dispatcher {
 const DEFAULT_MAX_QUEUE = 10;
 const DEFAULT_TIMEOUT_MS = 300_000;
 
+async function logQueueEvent(workspace: string, event: object): Promise<void> {
+  try {
+    const dir = pathJoin(workspace, "state");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.appendFile(
+      pathJoin(dir, "queue.log"),
+      JSON.stringify({ ts: new Date().toISOString(), ...event }) + "\n",
+    );
+  } catch {
+    // queue.log is best-effort; never let a log failure kill a dispatch.
+  }
+}
+
 export function createDispatcher(opts: Options): Dispatcher {
   const maxQueue = opts.maxQueue ?? DEFAULT_MAX_QUEUE;
   const queues = new Map<string, QueueEntry[]>();
@@ -37,6 +52,11 @@ export function createDispatcher(opts: Options): Dispatcher {
 
     running.add(agent);
     const entry = q.shift()!;
+    void logQueueEvent(opts.workspace, {
+      event: "dequeue",
+      agent,
+      correlationId: entry.req.correlationId,
+    });
     entry.resolve(await runOne(agent, entry));
     running.delete(agent);
     void processNext(agent);
@@ -115,6 +135,12 @@ export function createDispatcher(opts: Options): Dispatcher {
         const entry: QueueEntry = { req, enqueuedAt: Date.now(), resolve };
         q.push(entry);
         queues.set(req.agent, q);
+        void logQueueEvent(opts.workspace, {
+          event: "enqueue",
+          agent: req.agent,
+          correlationId: req.correlationId,
+          depth: q.length,
+        });
         void processNext(req.agent);
       });
     },

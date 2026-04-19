@@ -107,10 +107,10 @@ describe("dispatcher", () => {
         async () => ({ sessionId: "s-host", result: "ok" }),
       ]),
     });
-    const [r1, r2] = await Promise.all([
-      d.dispatch({ agent: "host", payload: "1" }),
-      d.dispatch({ agent: "host", payload: "2", timeoutMs: 50 }),
-    ]);
+    const p1 = d.dispatch({ agent: "host", payload: "1" });
+    await delay(5);
+    const p2 = d.dispatch({ agent: "host", payload: "2", timeoutMs: 50 });
+    const [r1, r2] = await Promise.all([p1, p2]);
     expect(r1.ok).toBe(true);
     expect(r2.ok).toBe(false);
     expect(r2.error?.code).toBe("TIMEOUT");
