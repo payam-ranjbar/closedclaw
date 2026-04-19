@@ -15,6 +15,7 @@ export interface ChannelContext {
   app: Application;
   bus: IngestBus;
   config: Record<string, string>;
+  log: (entry: object) => Promise<void>;
 }
 
 export interface Channel {

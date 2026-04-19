@@ -17,6 +17,7 @@ function startApp(): Promise<{ app: express.Express; server: Server; port: numbe
 
 describe("TelegramChannel", () => {
   let submitted: { ref: ChannelRef; text: string }[];
+  let logEntries: object[];
   let app: express.Express;
   let server: Server;
   let port: number;
@@ -25,12 +26,18 @@ describe("TelegramChannel", () => {
   beforeEach(async () => {
     ({ app, server, port } = await startApp());
     submitted = [];
+    logEntries = [];
     const bus = { submit: async (ref: ChannelRef, text: string) => { submitted.push({ ref, text }); } };
     const channel = new TelegramChannel({
       fetcher: async () => new Response("{}"),
       secretOverride: secret,
     });
-    await channel.start({ app, bus, config: { token: "bot-token", publicBaseUrl: "https://x.example" } });
+    await channel.start({
+      app,
+      bus,
+      config: { token: "bot-token", publicBaseUrl: "https://x.example" },
+      log: async (entry) => { logEntries.push(entry); },
+    });
   });
 
   afterEach(() => { server?.close(); });
