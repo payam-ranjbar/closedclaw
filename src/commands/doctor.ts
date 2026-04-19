@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { fetch } from "undici";
+import { resolveBin } from "../orchestrator/util/resolve-bin.js";
 
 export interface DoctorReport {
   passed: boolean;
@@ -53,7 +54,8 @@ async function checkEnv(ws: string): Promise<DoctorReport["checks"][number]> {
 
 async function checkBinary(bin: string): Promise<DoctorReport["checks"][number]> {
   return new Promise((resolve) => {
-    const child = spawn(bin, ["--version"], { stdio: "ignore" });
+    const resolved = resolveBin(bin);
+    const child = spawn(resolved.command, [...resolved.prefixArgs, "--version"], { stdio: "ignore" });
     child.on("error", () => resolve({ name: `${bin} on PATH`, ok: false, detail: "not found" }));
     child.on("exit", (code) => resolve({ name: `${bin} on PATH`, ok: code === 0, detail: code === 0 ? "ok" : `exited ${code}` }));
   });

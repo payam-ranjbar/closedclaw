@@ -1,6 +1,7 @@
 import { spawn as realSpawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { readAgents } from "../state.js";
+import { resolveBin } from "../util/resolve-bin.js";
 import type { Runner, RunnerOutcome } from "./contract.js";
 
 export type SpawnFn = (cmd: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv }) => ChildProcess;
@@ -22,7 +23,8 @@ export function createRunner(opts: Options = {}): Runner {
       if (record.sessionId) args.push("--resume", record.sessionId);
       if (record.model) args.push("--model", record.model);
 
-      const child = spawn("claude", args, {
+      const bin = resolveBin("claude");
+      const child = spawn(bin.command, [...bin.prefixArgs, ...args], {
         cwd: record.cwd,
         env: { ...process.env, CLOSEDCLAW_WORKSPACE: workspace },
       });
