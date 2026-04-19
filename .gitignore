@@ -4,6 +4,7 @@ dist/
 /workspace/
 /docs/
 /.claude/
+/.curriculum/
 CLAUDE.md
 *.log
 coverage/
