@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+workspace/
+tests/
+docs/
+.git/
+.github/
+*.log
+coverage/
