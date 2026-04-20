@@ -15,6 +15,7 @@ export interface ChannelContext {
   app: Application;
   bus: IngestBus;
   config: Record<string, string>;
+  log: (entry: object) => Promise<void>;
 }
 
 export interface Channel {
@@ -22,4 +23,5 @@ export interface Channel {
   start(ctx: ChannelContext): Promise<void>;
   stop(): Promise<void>;
   reply(ref: ChannelRef, text: string): Promise<void>;
+  signalThinking?(ref: ChannelRef, on: boolean): void;
 }

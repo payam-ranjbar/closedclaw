@@ -12,17 +12,20 @@ export function createIngestBus(opts: Options): IngestBus {
       const channel = opts.channels.get(ref.channel);
       if (!channel) return;
 
-      const res = await opts.dispatcher.dispatch({
-        agent: "host",
-        payload: text,
-        origin: { kind: "channel", name: ref.channel },
-      });
-
-      const replyText = res.ok
-        ? (res.result ?? "")
-        : `dispatch failed: ${res.error?.code}: ${res.error?.message}`;
-
-      await channel.reply(ref, replyText);
+      channel.signalThinking?.(ref, true);
+      try {
+        const res = await opts.dispatcher.dispatch({
+          agent: "host",
+          payload: text,
+          origin: { kind: "channel", name: ref.channel },
+        });
+        const replyText = res.ok
+          ? (res.result ?? "")
+          : `dispatch failed: ${res.error?.code}: ${res.error?.message}`;
+        await channel.reply(ref, replyText);
+      } finally {
+        channel.signalThinking?.(ref, false);
+      }
     },
   };
 }

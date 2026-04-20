@@ -31,6 +31,13 @@ export async function startServer(workspace: string): Promise<ServerHandle> {
   const app = express();
   const bus = createIngestBus({ dispatcher, channels });
 
+  const appendSystemLog = async (entry: object): Promise<void> => {
+    await fs.appendFile(
+      join(workspace, "system.log"),
+      JSON.stringify({ ts: new Date().toISOString(), ...entry }) + "\n",
+    );
+  };
+
   await telegram.start({
     app,
     bus,
@@ -38,6 +45,7 @@ export async function startServer(workspace: string): Promise<ServerHandle> {
       token: process.env.TELEGRAM_BOT_TOKEN ?? "",
       publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
     },
+    log: appendSystemLog,
   });
 
   const cron = createCronTrigger({
@@ -48,12 +56,7 @@ export async function startServer(workspace: string): Promise<ServerHandle> {
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
       await fs.writeFile(join(dir, `${ts}.md`), `# ${ts}\n\n## Payload\n\n${payload}\n\n## Result\n\n${result}\n`);
     },
-    logLine: async (obj) => {
-      await fs.appendFile(
-        join(workspace, "system.log"),
-        JSON.stringify({ ts: new Date().toISOString(), ...obj }) + "\n",
-      );
-    },
+    logLine: appendSystemLog,
   });
 
   const registry = await readAgents(workspace);

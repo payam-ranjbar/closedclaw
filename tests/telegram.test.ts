@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import express from "express";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -17,6 +17,7 @@ function startApp(): Promise<{ app: express.Express; server: Server; port: numbe
 
 describe("TelegramChannel", () => {
   let submitted: { ref: ChannelRef; text: string }[];
+  let logEntries: object[];
   let app: express.Express;
   let server: Server;
   let port: number;
@@ -25,12 +26,18 @@ describe("TelegramChannel", () => {
   beforeEach(async () => {
     ({ app, server, port } = await startApp());
     submitted = [];
+    logEntries = [];
     const bus = { submit: async (ref: ChannelRef, text: string) => { submitted.push({ ref, text }); } };
     const channel = new TelegramChannel({
       fetcher: async () => new Response("{}"),
       secretOverride: secret,
     });
-    await channel.start({ app, bus, config: { token: "bot-token", publicBaseUrl: "https://x.example" } });
+    await channel.start({
+      app,
+      bus,
+      config: { token: "bot-token", publicBaseUrl: "https://x.example" },
+      log: async (entry) => { logEntries.push(entry); },
+    });
   });
 
   afterEach(() => { server?.close(); });
@@ -59,5 +66,238 @@ describe("TelegramChannel", () => {
     });
     expect(res.status).toBe(401);
     expect(submitted).toHaveLength(0);
+  });
+
+  it("logs telegram.message.received with chatId, userId, messageId, textLength", async () => {
+    const res = await fetch(`http://localhost:${port}/webhooks/telegram`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Telegram-Bot-Api-Secret-Token": secret },
+      body: JSON.stringify({
+        update_id: 1,
+        message: { message_id: 10, from: { id: 7, is_bot: false, first_name: "u" },
+                   chat: { id: 99, type: "private" }, text: "hello" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const received = logEntries.find((e: any) => e.event === "telegram.message.received") as any;
+    expect(received).toBeDefined();
+    expect(received.channel).toBe("telegram");
+    expect(received.chatId).toBe("99");
+    expect(received.userId).toBe("7");
+    expect(received.messageId).toBe(10);
+    expect(received.textLength).toBe(5);
+  });
+
+  it("logs telegram.webhook.rejected on bad secret", async () => {
+    const res = await fetch(`http://localhost:${port}/webhooks/telegram`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ update_id: 2 }),
+    });
+    expect(res.status).toBe(401);
+    expect(logEntries).toContainEqual(expect.objectContaining({
+      channel: "telegram",
+      event: "telegram.webhook.rejected",
+      reason: "bad-secret",
+    }));
+  });
+
+  it("logs telegram.message.ignored when message has no text", async () => {
+    const res = await fetch(`http://localhost:${port}/webhooks/telegram`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Telegram-Bot-Api-Secret-Token": secret },
+      body: JSON.stringify({
+        update_id: 3,
+        message: { message_id: 11, chat: { id: 99, type: "private" } },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(logEntries).toContainEqual(expect.objectContaining({
+      channel: "telegram",
+      event: "telegram.message.ignored",
+      reason: "no-text",
+    }));
+  });
+
+  it("logs telegram.reply.sent with status on a 2xx sendMessage response", async () => {
+    const localLog: object[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async () => new Response("{}", { status: 200 }),
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async (entry) => { localLog.push(entry); },
+      });
+      await ch.reply({ channel: "telegram", conversationId: "99" }, "hi back");
+      expect(localLog).toContainEqual(expect.objectContaining({
+        channel: "telegram",
+        event: "telegram.reply.sent",
+        chatId: "99",
+        status: 200,
+      }));
+    } finally {
+      server2.close();
+    }
+  });
+
+  it("logs telegram.reply.failed when sendMessage returns a non-2xx status", async () => {
+    const localLog: object[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async () => new Response("{}", { status: 500 }),
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async (entry) => { localLog.push(entry); },
+      });
+      await ch.reply({ channel: "telegram", conversationId: "99" }, "x");
+      expect(localLog).toContainEqual(expect.objectContaining({
+        channel: "telegram",
+        event: "telegram.reply.failed",
+        chatId: "99",
+        error: "HTTP 500",
+      }));
+    } finally {
+      server2.close();
+    }
+  });
+
+  it("logs telegram.ingest.failed when bus.submit rejects", async () => {
+    const { app: app2, server: server2, port: port2 } = await startApp();
+    const localLog: object[] = [];
+    const localBus = { submit: async () => { throw new Error("bus down"); } };
+    const ch = new TelegramChannel({
+      fetcher: async () => new Response("{}"),
+      secretOverride: secret,
+    });
+    await ch.start({
+      app: app2,
+      bus: localBus,
+      config: { token: "bot-token" },
+      log: async (entry) => { localLog.push(entry); },
+    });
+    try {
+      const res = await fetch(`http://localhost:${port2}/webhooks/telegram`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Telegram-Bot-Api-Secret-Token": secret },
+        body: JSON.stringify({
+          update_id: 4,
+          message: { message_id: 12, from: { id: 7 }, chat: { id: 99, type: "private" }, text: "hi" },
+        }),
+      });
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(localLog).toContainEqual(expect.objectContaining({
+        channel: "telegram",
+        event: "telegram.ingest.failed",
+        chatId: "99",
+        error: expect.stringContaining("bus down"),
+      }));
+    } finally {
+      server2.close();
+    }
+  });
+
+  it("signalThinking(true) sends sendChatAction immediately and again on the 4s tick", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async (input) => { calls.push(String(input)); return new Response("{}"); },
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async () => {},
+      });
+      ch.signalThinking!({ channel: "telegram", conversationId: "99" }, true);
+      await Promise.resolve();
+      const typingCalls = () => calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(typingCalls()).toBe(1);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(typingCalls()).toBe(2);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(typingCalls()).toBe(3);
+      ch.signalThinking!({ channel: "telegram", conversationId: "99" }, false);
+      await ch.stop();
+    } finally {
+      server2.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("signalThinking(false) clears the interval and stops further sendChatAction calls", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async (input) => { calls.push(String(input)); return new Response("{}"); },
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async () => {},
+      });
+      const ref = { channel: "telegram", conversationId: "99" };
+      ch.signalThinking!(ref, true);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(4000);
+      const before = calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(before).toBe(2);
+      ch.signalThinking!(ref, false);
+      await vi.advanceTimersByTimeAsync(20000);
+      const after = calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(after).toBe(2);
+    } finally {
+      server2.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("signalThinking(true) twice on the same conversation replaces the existing timer (no stacking)", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    const ch = new TelegramChannel({
+      fetcher: async (input) => { calls.push(String(input)); return new Response("{}"); },
+      secretOverride: secret,
+    });
+    const { app: app2, server: server2 } = await startApp();
+    try {
+      await ch.start({
+        app: app2,
+        bus: { submit: async () => {} },
+        config: { token: "bot-token" },
+        log: async () => {},
+      });
+      const ref = { channel: "telegram", conversationId: "99" };
+      ch.signalThinking!(ref, true);
+      await Promise.resolve();
+      ch.signalThinking!(ref, true);
+      await Promise.resolve();
+      const beforeTicks = calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(beforeTicks).toBe(2);
+      await vi.advanceTimersByTimeAsync(4000);
+      const afterOneTick = calls.filter((u) => u.includes("sendChatAction")).length;
+      expect(afterOneTick).toBe(3);
+      await ch.stop();
+    } finally {
+      server2.close();
+      vi.useRealTimers();
+    }
   });
 });
