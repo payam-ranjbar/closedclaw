@@ -2,10 +2,12 @@ node_modules/
 dist/
 .env
 /workspace/
-/docs/
+/docs/*
+!/docs/SWE/
 /.claude/
 /.curriculum/
 CLAUDE.md
 *.log
 coverage/
 .DS_Store
+temp/*
