@@ -39,3 +39,22 @@ export function clearPidFile(workspace: string): void {
     throw err;
   }
 }
+
+export function startLockPath(workspace: string): string {
+  return join(workspace, "state", "closedclaw.start.lock");
+}
+
+export function acquireStartLock(workspace: string): void {
+  const path = startLockPath(workspace);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, String(process.pid) + "\n", { flag: "wx" });
+}
+
+export function releaseStartLock(workspace: string): void {
+  try {
+    unlinkSync(startLockPath(workspace));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw err;
+  }
+}

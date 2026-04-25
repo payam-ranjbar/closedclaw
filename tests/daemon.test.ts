@@ -7,6 +7,9 @@ import {
   readPidFile,
   writePidFile,
   clearPidFile,
+  startLockPath,
+  acquireStartLock,
+  releaseStartLock,
 } from "../src/orchestrator/daemon.js";
 
 describe("daemon: PID file", () => {
@@ -50,5 +53,39 @@ describe("daemon: PID file", () => {
 
   it("clearPidFile is idempotent on missing", () => {
     expect(() => clearPidFile(ws)).not.toThrow();
+  });
+});
+
+describe("daemon: start lock", () => {
+  let ws: string;
+
+  beforeEach(() => {
+    ws = mkdtempSync(join(tmpdir(), "cc-daemon-"));
+  });
+
+  it("startLockPath resolves under state/", () => {
+    expect(startLockPath(ws)).toBe(join(ws, "state", "closedclaw.start.lock"));
+  });
+
+  it("acquireStartLock succeeds on first call", () => {
+    expect(() => acquireStartLock(ws)).not.toThrow();
+    expect(existsSync(startLockPath(ws))).toBe(true);
+  });
+
+  it("acquireStartLock throws EEXIST on second call", () => {
+    acquireStartLock(ws);
+    let caught: NodeJS.ErrnoException | null = null;
+    try { acquireStartLock(ws); } catch (e) { caught = e as NodeJS.ErrnoException; }
+    expect(caught?.code).toBe("EEXIST");
+  });
+
+  it("releaseStartLock removes the lock", () => {
+    acquireStartLock(ws);
+    releaseStartLock(ws);
+    expect(existsSync(startLockPath(ws))).toBe(false);
+  });
+
+  it("releaseStartLock is idempotent on missing", () => {
+    expect(() => releaseStartLock(ws)).not.toThrow();
   });
 });
