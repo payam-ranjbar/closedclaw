@@ -88,7 +88,6 @@ export class TelegramChannel implements Channel {
         });
         return;
       }
-      // Poll loop will be spawned in Task 7.
       return;
     }
 
@@ -137,7 +136,10 @@ export class TelegramChannel implements Channel {
   }
 
   async stop(): Promise<void> {
-    if (this.shutdownAbort) this.shutdownAbort.abort();
+    if (this.shutdownAbort) {
+      this.shutdownAbort.abort();
+      this.shutdownAbort = null;
+    }
     for (const handle of this.timers.values()) clearInterval(handle);
     this.timers.clear();
   }
