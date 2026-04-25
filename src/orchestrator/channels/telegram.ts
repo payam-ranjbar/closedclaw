@@ -42,7 +42,8 @@ export class TelegramChannel implements Channel {
       ?? "";
     this.logEntry = ctx.log;
 
-    ctx.app.post("/webhooks/telegram", express.json(), async (req, res) => {
+    ctx.mount("POST", "/webhooks/telegram", express.json());
+    ctx.mount("POST", "/webhooks/telegram", async (req, res) => {
       if (req.header("x-telegram-bot-api-secret-token") !== this.secret) {
         await this.log({ event: "telegram.webhook.rejected", reason: "bad-secret" });
         res.status(401).json({ ok: false });
@@ -77,7 +78,7 @@ export class TelegramChannel implements Channel {
       ctx.bus.submit(ref, body.message.text).catch(async (err) => {
         await this.log({ event: "telegram.ingest.failed", chatId, error: String(err) });
       });
-    });
+    }, { public: true });
 
     if (ctx.config.publicBaseUrl && this.token) {
       await this.registerWebhook(ctx.config.publicBaseUrl);

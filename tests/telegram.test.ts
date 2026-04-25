@@ -15,6 +15,16 @@ function startApp(): Promise<{ app: express.Express; server: Server; port: numbe
   });
 }
 
+const mountFor = (a: express.Express) => (
+  method: string,
+  path: string,
+  handler: any,
+  _opts?: { public?: boolean },
+): void => {
+  const verb = method.toLowerCase() as "get" | "post" | "put" | "delete" | "patch";
+  (a as any)[verb](path, handler);
+};
+
 describe("TelegramChannel", () => {
   let submitted: { ref: ChannelRef; text: string }[];
   let logEntries: object[];
@@ -34,6 +44,7 @@ describe("TelegramChannel", () => {
     });
     await channel.start({
       app,
+      mount: mountFor(app),
       bus,
       config: { token: "bot-token", publicBaseUrl: "https://x.example" },
       log: async (entry) => { logEntries.push(entry); },
@@ -129,6 +140,7 @@ describe("TelegramChannel", () => {
     try {
       await ch.start({
         app: app2,
+        mount: mountFor(app2),
         bus: { submit: async () => {} },
         config: { token: "bot-token" },
         log: async (entry) => { localLog.push(entry); },
@@ -155,6 +167,7 @@ describe("TelegramChannel", () => {
     try {
       await ch.start({
         app: app2,
+        mount: mountFor(app2),
         bus: { submit: async () => {} },
         config: { token: "bot-token" },
         log: async (entry) => { localLog.push(entry); },
@@ -181,6 +194,7 @@ describe("TelegramChannel", () => {
     });
     await ch.start({
       app: app2,
+      mount: mountFor(app2),
       bus: localBus,
       config: { token: "bot-token" },
       log: async (entry) => { localLog.push(entry); },
@@ -218,6 +232,7 @@ describe("TelegramChannel", () => {
     try {
       await ch.start({
         app: app2,
+        mount: mountFor(app2),
         bus: { submit: async () => {} },
         config: { token: "bot-token" },
         log: async () => {},
@@ -249,6 +264,7 @@ describe("TelegramChannel", () => {
     try {
       await ch.start({
         app: app2,
+        mount: mountFor(app2),
         bus: { submit: async () => {} },
         config: { token: "bot-token" },
         log: async () => {},
@@ -280,6 +296,7 @@ describe("TelegramChannel", () => {
     try {
       await ch.start({
         app: app2,
+        mount: mountFor(app2),
         bus: { submit: async () => {} },
         config: { token: "bot-token" },
         log: async () => {},

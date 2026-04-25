@@ -26,7 +26,7 @@ export interface IngestBus {
 
 export interface ChannelContext {
   app: Application;
-  mount?: (method: HttpMethod, path: string, handler: RequestHandler, opts?: MountOptions) => void;
+  mount: (method: HttpMethod, path: string, handler: RequestHandler, opts?: MountOptions) => void;
   bus: IngestBus;
   config: Record<string, string>;
   log: (entry: object) => Promise<void>;
