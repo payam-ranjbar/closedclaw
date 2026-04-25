@@ -58,3 +58,22 @@ export function releaseStartLock(workspace: string): void {
     throw err;
   }
 }
+
+export function isDaemonAlive(workspace: string): { running: boolean; pid?: number } {
+  const entry = readPidFile(workspace);
+  if (!entry) return { running: false };
+  try {
+    process.kill(entry.pid, 0);
+    return { running: true, pid: entry.pid };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return { running: false };
+    if (code === "EPERM") {
+      throw new Error(
+        `pid ${entry.pid} exists but is not owned by this user. Refusing. ` +
+        `If this PID file is stale, remove it manually: rm ${pidFilePath(workspace)}`,
+      );
+    }
+    throw err;
+  }
+}

@@ -10,6 +10,7 @@ import {
   startLockPath,
   acquireStartLock,
   releaseStartLock,
+  isDaemonAlive,
 } from "../src/orchestrator/daemon.js";
 
 describe("daemon: PID file", () => {
@@ -87,5 +88,33 @@ describe("daemon: start lock", () => {
 
   it("releaseStartLock is idempotent on missing", () => {
     expect(() => releaseStartLock(ws)).not.toThrow();
+  });
+});
+
+describe("daemon: isDaemonAlive", () => {
+  let ws: string;
+
+  beforeEach(() => {
+    ws = mkdtempSync(join(tmpdir(), "cc-daemon-"));
+  });
+
+  it("returns running:false when no PID file", () => {
+    expect(isDaemonAlive(ws)).toEqual({ running: false });
+  });
+
+  it("returns running:true with our own pid", () => {
+    writePidFile(ws, process.pid);
+    expect(isDaemonAlive(ws)).toEqual({ running: true, pid: process.pid });
+  });
+
+  it("returns running:false when pid is dead", () => {
+    writePidFile(ws, 2 ** 30);
+    expect(isDaemonAlive(ws)).toEqual({ running: false });
+  });
+
+  it("treats malformed pid file as not running", () => {
+    mkdirSync(join(ws, "state"), { recursive: true });
+    writeFileSync(pidFilePath(ws), "garbage");
+    expect(isDaemonAlive(ws)).toEqual({ running: false });
   });
 });
