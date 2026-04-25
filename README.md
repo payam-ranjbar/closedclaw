@@ -62,10 +62,10 @@ Key architectural decisions are documented in [`docs/SWE/adr/`](docs/SWE/adr/).
 | [ADR-0005](docs/SWE/adr/ADR-0005-execute-workers-as-claude-cli-subprocesses.md) | Execute workers as `claude` CLI subprocesses | Accepted |
 | [ADR-0006](docs/SWE/adr/ADR-0006-route-channel-and-trigger-inputs-through-ingestbus.md) | Route channel and trigger inputs through IngestBus | Accepted |
 | [ADR-0007](docs/SWE/adr/ADR-0007-delegate-routing-to-host-agent-via-cli-subcommand.md) | Delegate routing to host agent via CLI subcommand | Accepted |
-| [ADR-0008](docs/SWE/adr/ADR-0008-ingest-telegram-via-webhook-behind-public-tunnel.md) | Ingest Telegram via webhook behind public tunnel | Accepted |
 | [ADR-0009](docs/SWE/adr/ADR-0009-define-scheduled-triggers-as-yaml-specs.md) | Define scheduled triggers as YAML specs | Accepted |
 | [ADR-0010](docs/SWE/adr/ADR-0010-emit-jsonl-telemetry-via-claude-hooks.md) | Emit JSONL telemetry via Claude hooks | Accepted |
 | [ADR-0011](docs/SWE/adr/ADR-0011-scaffold-workspaces-from-bundled-templates.md) | Scaffold workspaces from bundled templates | Accepted |
 | [ADR-0012](docs/SWE/adr/ADR-0012-ship-container-image-with-cloudflare-tunnel-sidecar.md) | Ship container image with Cloudflare tunnel sidecar | Accepted |
+| [ADR-0013](docs/SWE/adr/ADR-0013-default-telegram-ingest-to-long-polling.md) | Default Telegram ingest to long-polling | Accepted |
 
-_12 architectural decisions recorded. Last updated: 2026-04-21._
+_12 architectural decisions recorded. Last updated: 2026-04-25._
