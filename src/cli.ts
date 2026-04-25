@@ -7,6 +7,7 @@ import { runInit } from "./commands/init.js";
 import { runStart } from "./commands/start.js";
 import { runAddAgent } from "./commands/add-agent.js";
 import { runStatus } from "./commands/status.js";
+import { runStop } from "./commands/stop.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runHook } from "./commands/hook.js";
 import { runDispatch } from "./commands/dispatch.js";
@@ -46,6 +47,18 @@ program.command("status")
   .action(async (opts: { workspace?: string }) => {
     const ws = resolveWorkspace({ flag: opts.workspace });
     await runStatus({ workspace: ws, out: process.stdout });
+  });
+
+program.command("stop")
+  .option("--workspace <path>")
+  .option("--force", "send SIGKILL after the SIGTERM grace period")
+  .action(async (opts: { workspace?: string; force?: boolean }) => {
+    const ws = resolveWorkspace({ flag: opts.workspace });
+    const code = await runStop({
+      workspace: ws, force: !!opts.force,
+      out: process.stdout, err: process.stderr,
+    });
+    process.exit(code);
   });
 
 program.command("doctor")
