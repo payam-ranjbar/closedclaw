@@ -59,11 +59,12 @@ describe("stop command", () => {
   });
 
   it("happy path: sends SIGTERM, polls, exits 0 when process dies", async () => {
-    writePidFile(ws, 99999);
+    const livePid = process.pid;
+    writePidFile(ws, livePid);
     const out = new PassThrough(), err = new PassThrough();
     const clock = makeClock();
     let alive = true;
-    const signaller = (pid: number, signal: NodeJS.Signals | 0) => {
+    const signaller = (_pid: number, signal: NodeJS.Signals | 0) => {
       if (signal === "SIGTERM") { alive = false; return; }
       if (signal === 0) {
         if (!alive) { const e = new Error("ESRCH") as NodeJS.ErrnoException; e.code = "ESRCH"; throw e; }
@@ -76,12 +77,12 @@ describe("stop command", () => {
     const code = await promise;
     out.end(); err.end();
     expect(code).toBe(0);
-    expect(await collect(out)).toContain("stopped (was pid 99999)");
+    expect(await collect(out)).toContain(`stopped (was pid ${livePid})`);
     expect(existsSync(pidFilePath(ws))).toBe(false);
   });
 
   it("times out after 5s without --force and returns 1", async () => {
-    writePidFile(ws, 99999);
+    writePidFile(ws, process.pid);
     const out = new PassThrough(), err = new PassThrough();
     const clock = makeClock();
     const signaller = (_pid: number, _signal: NodeJS.Signals | 0) => { /* always alive */ };
@@ -94,7 +95,7 @@ describe("stop command", () => {
   });
 
   it("--force escalates to SIGKILL and exits 0", async () => {
-    writePidFile(ws, 99999);
+    writePidFile(ws, process.pid);
     const out = new PassThrough(), err = new PassThrough();
     const clock = makeClock();
     let alive = true;

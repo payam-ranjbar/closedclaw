@@ -1,4 +1,4 @@
-import { clearPidFile, readPidFile } from "../orchestrator/daemon.js";
+import { clearPidFile, isDaemonAlive, readPidFile } from "../orchestrator/daemon.js";
 
 interface Clock {
   now(): number;
@@ -28,17 +28,12 @@ export async function runStop(args: {
     args.out.write("closedclaw not running\n");
     return 0;
   }
-  const pid = entry.pid;
-  try { sig(pid, 0); }
-  catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") {
-      clearPidFile(args.workspace);
-      args.out.write("closedclaw not running\n");
-      return 0;
-    }
-    throw e;
+  if (!isDaemonAlive(args.workspace).running) {
+    clearPidFile(args.workspace);
+    args.out.write("closedclaw not running\n");
+    return 0;
   }
+  const pid = entry.pid;
 
   try { sig(pid, "SIGTERM"); }
   catch (e) {
