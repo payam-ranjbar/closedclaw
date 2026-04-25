@@ -27,6 +27,7 @@ const LONG_POLL_TIMEOUT_SECONDS = 25;
 const SHUTDOWN_GRACE_MS = 2000;
 const BACKOFF_INITIAL_MS = 1000;
 const BACKOFF_MAX_MS = 30000;
+const TRANSIENT_LOG_INTERVAL = 10;
 
 export type ErrorInput =
   | { kind: "http"; status: number; body: { parameters?: { retry_after?: number } } }
@@ -290,6 +291,13 @@ export class TelegramChannel implements Channel {
       if (networkErr) {
         consecutiveFailures += 1;
         const delay = this.backoffMs(consecutiveFailures);
+        if (consecutiveFailures === 1 || consecutiveFailures % TRANSIENT_LOG_INTERVAL === 0) {
+          await this.log({
+            event: "telegram.polling.transient",
+            error: String(networkErr),
+            retryAfterMs: delay,
+          });
+        }
         await this.sleep(delay, signal);
         continue;
       }
@@ -316,6 +324,13 @@ export class TelegramChannel implements Channel {
         if (cls.kind === "conflict") {
           await this.deleteWebhookOnce().catch(() => undefined);
           await this.log({ event: "telegram.polling.conflict", action: "redelete-webhook" });
+        }
+        if (consecutiveFailures === 1 || consecutiveFailures % TRANSIENT_LOG_INTERVAL === 0) {
+          await this.log({
+            event: "telegram.polling.transient",
+            error: `HTTP ${response!.status}`,
+            retryAfterMs: delay,
+          });
         }
         await this.sleep(delay, signal);
         continue;

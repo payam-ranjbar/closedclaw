@@ -726,6 +726,48 @@ describe("TelegramChannel", () => {
     });
   });
 
+  describe("TelegramChannel polling transient log throttling", () => {
+    it("emits telegram.polling.transient on the 1st failure and every 10th thereafter", async () => {
+      const log: any[] = [];
+      let getUpdatesCalls = 0;
+      let twelfthCallSeen!: () => void;
+      const twelfthCall = new Promise<void>((r) => { twelfthCallSeen = r; });
+      const ch = new TelegramChannel({
+        fetcher: async (input) => {
+          const url = String(input);
+          if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
+          if (url.includes("/getUpdates")) {
+            getUpdatesCalls += 1;
+            if (getUpdatesCalls <= 11) return new Response("{}", { status: 502 });
+            if (getUpdatesCalls === 12) twelfthCallSeen();
+            return await new Promise<Response>(() => {});
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async () => {},
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async (e) => { log.push(e); },
+        });
+        await twelfthCall;
+        await ch.stop();
+        const transient = log.filter((e) => e.event === "telegram.polling.transient");
+        // Failures 1 and 10 → exactly 2 transient events
+        expect(transient).toHaveLength(2);
+      } finally {
+        s.close();
+      }
+    });
+  });
+
   describe("TelegramChannel polling 409", () => {
     it("calls deleteWebhook again, logs conflict, and retries", async () => {
       const log: any[] = [];
