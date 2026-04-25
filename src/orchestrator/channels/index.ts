@@ -1,4 +1,17 @@
-import type { Application } from "express";
+import type { Application, RequestHandler } from "express";
+
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+
+export interface MountOptions {
+  public?: boolean;
+}
+
+export interface Mount {
+  method: HttpMethod;
+  path: string;
+  handler: RequestHandler;
+  public: boolean;
+}
 
 export interface ChannelRef {
   channel: string;
@@ -13,6 +26,7 @@ export interface IngestBus {
 
 export interface ChannelContext {
   app: Application;
+  mount?: (method: HttpMethod, path: string, handler: RequestHandler, opts?: MountOptions) => void;
   bus: IngestBus;
   config: Record<string, string>;
   log: (entry: object) => Promise<void>;
