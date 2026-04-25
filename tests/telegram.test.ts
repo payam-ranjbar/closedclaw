@@ -768,6 +768,61 @@ describe("TelegramChannel", () => {
     });
   });
 
+  describe("TelegramChannel mode switching", () => {
+    it("polling mode does not mount POST /webhooks/telegram", async () => {
+      const mounts: Array<{ method: string; path: string }> = [];
+      const ch = new TelegramChannel({
+        fetcher: async () => new Response("{}", { status: 200 }),
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async () => {},
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: (method, path, handler, _opts) => {
+            mounts.push({ method, path });
+            (a as any)[method.toLowerCase()](path, handler);
+          },
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async () => {},
+        });
+        await ch.stop();
+        expect(mounts.find((x) => x.path === "/webhooks/telegram")).toBeUndefined();
+      } finally {
+        s.close();
+      }
+    });
+
+    it("webhook mode mounts POST /webhooks/telegram with public flag", async () => {
+      const mounts: Array<{ method: string; path: string; public?: boolean }> = [];
+      const ch = new TelegramChannel({
+        fetcher: async () => new Response("{}", { status: 200 }),
+        secretOverride: "s",
+        modeOverride: "webhook",
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: (method, path, handler, opts) => {
+            mounts.push({ method, path, public: opts?.public });
+            (a as any)[method.toLowerCase()](path, handler);
+          },
+          bus: { submit: async () => {} },
+          config: { token: "bot-token", publicBaseUrl: "https://x.example" },
+          log: async () => {},
+        });
+        const handler = mounts.find((x) => x.path === "/webhooks/telegram" && x.public === true);
+        expect(handler).toBeDefined();
+      } finally {
+        s.close();
+      }
+    });
+  });
+
   describe("TelegramChannel polling 409", () => {
     it("calls deleteWebhook again, logs conflict, and retries", async () => {
       const log: any[] = [];
