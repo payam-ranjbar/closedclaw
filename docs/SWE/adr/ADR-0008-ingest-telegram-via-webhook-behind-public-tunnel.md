@@ -7,7 +7,7 @@ author: Claude Opus 4.7 (1M context)
 created: 2026-04-18
 decided: 2026-04-18
 supersedes: null
-superseded_by: ADR-0014
+superseded_by: ADR-0013
 generated: auto-from-history
 ---
 
