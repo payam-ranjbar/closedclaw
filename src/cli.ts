@@ -4,7 +4,7 @@ import { config as loadEnv } from "dotenv";
 import { join } from "node:path";
 import { resolveWorkspace } from "./orchestrator/workspace.js";
 import { runInit } from "./commands/init.js";
-import { runStart } from "./commands/start.js";
+import { runStart, runDaemon } from "./commands/start.js";
 import { runAddAgent } from "./commands/add-agent.js";
 import { runStatus } from "./commands/status.js";
 import { runLog } from "./commands/log.js";
@@ -29,10 +29,11 @@ program.command("init")
 
 program.command("start")
   .option("--workspace <path>", "workspace directory")
-  .action(async (opts: { workspace?: string }) => {
+  .option("-f, --foreground", "run in the foreground (do not detach)")
+  .action(async (opts: { workspace?: string; foreground?: boolean }) => {
     const ws = resolveWorkspace({ flag: opts.workspace });
     const code = await runStart({
-      workspace: ws, foreground: false,
+      workspace: ws, foreground: !!opts.foreground,
       out: process.stdout, err: process.stderr,
     });
     process.exit(code);
@@ -109,6 +110,13 @@ program.command("dispatch <agent>", { hidden: true })
       agent, stdin: process.stdin, stdout: process.stdout, stderr: process.stderr, dispatcher,
     });
     process.exit(code);
+  });
+
+program.command("__daemon", { hidden: true })
+  .option("--workspace <path>", "workspace directory")
+  .action(async (opts: { workspace?: string }) => {
+    const ws = resolveWorkspace({ flag: opts.workspace });
+    await runDaemon({ workspace: ws });
   });
 
 program.parseAsync().catch((err: unknown) => {
