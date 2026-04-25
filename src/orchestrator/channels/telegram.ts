@@ -260,7 +260,7 @@ export class TelegramChannel implements Channel {
     await this.log({ event: "telegram.polling.started", offset });
 
     while (!signal.aborted) {
-      let response: Response;
+      let response: Awaited<ReturnType<Fetcher>>;
       try {
         response = await this.fetcher(
           `https://api.telegram.org/bot${this.token}/getUpdates?offset=${offset}&timeout=${LONG_POLL_TIMEOUT_SECONDS}`,
