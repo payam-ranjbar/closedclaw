@@ -7,7 +7,6 @@ A small Node app that runs a group of Claude Code agents on your machine. You me
 - Node 20 or newer
 - The claude CLI installed and logged in
 - A Telegram bot token (get one from @BotFather)
-- A public URL pointing at your local port 3000 (a cloudflared tunnel works fine)
 
 ## Setup
 
@@ -16,15 +15,7 @@ npm install -g closedclaw
 closedclaw init
 ```
 
-Open `~/.closedclaw/.env` and fill in:
-
-```
-PORT=3000
-PUBLIC_BASE_URL=https://your-public-url
-TELEGRAM_BOT_TOKEN=your-bot-token
-```
-
-Then:
+Open `~/.closedclaw/.env` and fill in `TELEGRAM_BOT_TOKEN`.
 
 ```
 closedclaw doctor
@@ -43,7 +34,20 @@ Then open `~/.closedclaw/agents/my-agent/CLAUDE.md` and describe what the agent 
 
 ## Docker
 
-There is a `docker-compose.yml` if you'd rather run it in a container. Copy `.env.example` to `.env`, fill it in, then `docker compose up`.
+```
+cp .env.example .env   # then fill in TELEGRAM_BOT_TOKEN
+docker compose up
+```
+
+## Running behind a public URL (advanced)
+
+For multi-instance deployments, lower-latency burst traffic, or push-native channels added later, set `TELEGRAM_INGEST_MODE=webhook` and `PUBLIC_BASE_URL` in `.env`, expose port 3000 via your own tunnel (cloudflared, ngrok, …), and run:
+
+```
+docker compose --profile webhook up
+```
+
+The `cloudflared` sidecar in `docker-compose.yml` activates only on this profile and reads `CLOUDFLARE_TUNNEL_TOKEN` from `.env`.
 
 ## Architecture
 
