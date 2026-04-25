@@ -24,6 +24,7 @@ const defaultSleep: Sleeper = (ms, signal) =>
 
 const DELETE_WEBHOOK_RETRIES = 3;
 const LONG_POLL_TIMEOUT_SECONDS = 25;
+const SHUTDOWN_GRACE_MS = 2000;
 
 export type ErrorInput =
   | { kind: "http"; status: number; body: { parameters?: { retry_after?: number } } }
@@ -81,6 +82,7 @@ export class TelegramChannel implements Channel {
   private logEntry: ChannelContext["log"] = async () => {};
   private timers = new Map<string, NodeJS.Timeout>();
   private shutdownAbort: AbortController | null = null;
+  private loopPromise: Promise<void> | null = null;
 
   constructor(private readonly opts: Options = {}) {
     this.fetcher = opts.fetcher ?? fetch;
@@ -110,7 +112,7 @@ export class TelegramChannel implements Channel {
         });
         return;
       }
-      this.pollLoop(this.shutdownAbort.signal, ctx.bus).catch(async (err) => {
+      this.loopPromise = this.pollLoop(this.shutdownAbort.signal, ctx.bus).catch(async (err) => {
         await this.log({
           event: "telegram.polling.fatal",
           reason: "auth",
@@ -171,6 +173,13 @@ export class TelegramChannel implements Channel {
     }
     for (const handle of this.timers.values()) clearInterval(handle);
     this.timers.clear();
+    if (this.loopPromise) {
+      await Promise.race([
+        this.loopPromise,
+        new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_GRACE_MS)),
+      ]);
+      this.loopPromise = null;
+    }
   }
 
   async reply(ref: ChannelRef, text: string): Promise<void> {
@@ -267,7 +276,7 @@ export class TelegramChannel implements Channel {
           { method: "GET", signal },
         );
       } catch (err) {
-        if (signal.aborted) break;
+        if (signal.aborted || (err instanceof Error && err.name === "AbortError")) break;
         throw err;
       }
 

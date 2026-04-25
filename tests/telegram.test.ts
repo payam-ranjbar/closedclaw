@@ -386,6 +386,85 @@ describe("TelegramChannel", () => {
     });
   });
 
+  describe("TelegramChannel polling shutdown", () => {
+    it("stop() during in-flight getUpdates aborts and emits telegram.polling.stopped reason=shutdown", async () => {
+      const log: any[] = [];
+      let firstGetSeen!: () => void;
+      const firstGet = new Promise<void>((r) => { firstGetSeen = r; });
+      const ch = new TelegramChannel({
+        fetcher: async (input, init) => {
+          const url = String(input);
+          if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
+          if (url.includes("/getUpdates")) {
+            firstGetSeen();
+            return await new Promise<Response>((_resolve, reject) => {
+              const signal = (init as RequestInit).signal as AbortSignal;
+              signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+            });
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async () => {},
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async (e) => { log.push(e); },
+        });
+        await firstGet;
+        await ch.stop();
+        expect(log).toContainEqual(expect.objectContaining({
+          event: "telegram.polling.stopped",
+          reason: "shutdown",
+        }));
+      } finally {
+        s.close();
+      }
+    });
+
+    it("stop() resolves within 2.5s even if fetcher hangs without honoring abort", async () => {
+      let firstGetSeen!: () => void;
+      const firstGet = new Promise<void>((r) => { firstGetSeen = r; });
+      const ch = new TelegramChannel({
+        fetcher: async (input) => {
+          const url = String(input);
+          if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
+          if (url.includes("/getUpdates")) {
+            firstGetSeen();
+            return await new Promise<Response>(() => {});  // never resolves, ignores abort
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async () => {},
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async () => {},
+        });
+        await firstGet;
+        const t0 = Date.now();
+        await ch.stop();
+        const elapsed = Date.now() - t0;
+        expect(elapsed).toBeLessThan(2500);
+      } finally {
+        s.close();
+      }
+    });
+  });
+
   describe("TelegramChannel.deleteWebhook (private, exercised via polling startup)", () => {
     it("calls /deleteWebhook once on success", async () => {
       const calls: string[] = [];
