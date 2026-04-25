@@ -80,11 +80,17 @@ export async function runLog(args: {
     args.out.write("(no system.log yet)\n");
     return 0;
   }
+  if (!exists) {
+    args.err.write("(waiting for system.log to appear)\n");
+  }
   if (!args.follow) return 0;
 
   return new Promise<number>((resolve) => {
+    let stopped = false;
     const onChange = (curr: { size: number }, _prev: { size: number }) => {
+      if (stopped) return;
       if (!exists) { exists = true; offset = 0; }
+      // Shrink-then-grow within one poll: reset before reading the new tail.
       if (curr.size < offset) offset = 0;
       if (curr.size > offset) {
         const chunk = readRange(path, offset, curr.size);
@@ -94,9 +100,11 @@ export async function runLog(args: {
     };
     watchFile(path, { interval }, onChange);
     const stop = (): void => {
-      unwatchFile(path, onChange);
-      args.out.write("\n");
-      resolve(0);
+      stopped = true;
+      try { unwatchFile(path, onChange); } finally {
+        try { args.out.write("\n"); } catch { /* stdout closed */ }
+        resolve(0);
+      }
     };
     if (args.signal?.aborted) { stop(); return; }
     args.signal?.addEventListener("abort", stop, { once: true });

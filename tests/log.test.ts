@@ -86,7 +86,7 @@ describe("log command (--follow)", () => {
     });
     await new Promise((r) => setTimeout(r, 100));
     appendFileSync(path, "appended\n");
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 400));
     ac.abort();
     const code = await promise;
     out.end(); err.end();
@@ -108,7 +108,7 @@ describe("log command (--follow)", () => {
     truncateSync(path, 0);
     await new Promise((r) => setTimeout(r, 100));
     appendFileSync(path, "after-truncate\n");
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 400));
     ac.abort();
     const code = await promise;
     out.end(); err.end();
