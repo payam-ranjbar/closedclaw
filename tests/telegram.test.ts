@@ -639,6 +639,142 @@ describe("TelegramChannel", () => {
       }
     });
   });
+
+  describe("TelegramChannel polling 401", () => {
+    it("emits telegram.polling.fatal reason=auth on 401 and exits the loop", async () => {
+      const log: any[] = [];
+      let getUpdatesCalls = 0;
+      let firstCallSeen!: () => void;
+      const firstCall = new Promise<void>((r) => { firstCallSeen = r; });
+      const ch = new TelegramChannel({
+        fetcher: async (input) => {
+          const url = String(input);
+          if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
+          if (url.includes("/getUpdates")) {
+            getUpdatesCalls += 1;
+            if (getUpdatesCalls === 1) firstCallSeen();
+            return new Response(JSON.stringify({ ok: false }), { status: 401 });
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async () => {},
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async (e) => { log.push(e); },
+        });
+        await firstCall;
+        await ch.stop();
+        expect(log).toContainEqual(expect.objectContaining({
+          event: "telegram.polling.fatal",
+          reason: "auth",
+        }));
+        expect(getUpdatesCalls).toBe(1);
+      } finally {
+        s.close();
+      }
+    });
+  });
+
+  describe("TelegramChannel polling 429", () => {
+    it("waits retry_after seconds (in ms) and then retries", async () => {
+      const sleeps: number[] = [];
+      let getUpdatesCalls = 0;
+      let secondCallSeen!: () => void;
+      const secondCall = new Promise<void>((r) => { secondCallSeen = r; });
+      const ch = new TelegramChannel({
+        fetcher: async (input) => {
+          const url = String(input);
+          if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
+          if (url.includes("/getUpdates")) {
+            getUpdatesCalls += 1;
+            if (getUpdatesCalls === 1) {
+              return new Response(JSON.stringify({ ok: false, parameters: { retry_after: 4 } }), { status: 429 });
+            }
+            if (getUpdatesCalls === 2) secondCallSeen();
+            return await new Promise<Response>(() => {});
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async (ms) => { sleeps.push(ms); },
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async () => {},
+        });
+        await secondCall;
+        await ch.stop();
+        expect(sleeps[0]).toBe(4000);
+        expect(getUpdatesCalls).toBeGreaterThanOrEqual(2);
+      } finally {
+        s.close();
+      }
+    });
+  });
+
+  describe("TelegramChannel polling 409", () => {
+    it("calls deleteWebhook again, logs conflict, and retries", async () => {
+      const log: any[] = [];
+      let getUpdatesCalls = 0;
+      let deleteCalls = 0;
+      let secondGetUpdatesSeen!: () => void;
+      const secondGetUpdates = new Promise<void>((r) => { secondGetUpdatesSeen = r; });
+      const ch = new TelegramChannel({
+        fetcher: async (input) => {
+          const url = String(input);
+          if (url.includes("/deleteWebhook")) {
+            deleteCalls += 1;
+            return new Response("{}", { status: 200 });
+          }
+          if (url.includes("/getUpdates")) {
+            getUpdatesCalls += 1;
+            if (getUpdatesCalls === 1) {
+              return new Response(JSON.stringify({ ok: false }), { status: 409 });
+            }
+            if (getUpdatesCalls === 2) secondGetUpdatesSeen();
+            return await new Promise<Response>(() => {});
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async () => {},
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async (e) => { log.push(e); },
+        });
+        await secondGetUpdates;
+        await ch.stop();
+        expect(deleteCalls).toBe(2);
+        expect(log).toContainEqual(expect.objectContaining({
+          event: "telegram.polling.conflict",
+          action: "redelete-webhook",
+        }));
+      } finally {
+        s.close();
+      }
+    });
+  });
 });
 
 describe("classifyError", () => {
