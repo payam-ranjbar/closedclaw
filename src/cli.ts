@@ -31,11 +31,11 @@ program.command("start")
   .option("--workspace <path>", "workspace directory")
   .action(async (opts: { workspace?: string }) => {
     const ws = resolveWorkspace({ flag: opts.workspace });
-    await runStart({
+    const code = await runStart({
       workspace: ws, foreground: false,
       out: process.stdout, err: process.stderr,
     });
-    console.log(`closedclaw listening with workspace ${ws}`);
+    process.exit(code);
   });
 
 program.command("add-agent <name>")

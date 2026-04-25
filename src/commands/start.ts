@@ -37,10 +37,13 @@ export async function runStart(args: {
 
 export async function runDaemon(args: { workspace: string }): Promise<void> {
   const handle = await startServer(args.workspace);
-  const onSig = async (): Promise<void> => {
-    await handle.stop();
-    clearPidFile(args.workspace);
-    process.exit(0);
+  const onSig = (): void => {
+    void (async () => {
+      try { await handle.stop(); } finally {
+        clearPidFile(args.workspace);
+        process.exit(0);
+      }
+    })();
   };
   process.once("SIGTERM", onSig);
   process.once("SIGINT", onSig);
