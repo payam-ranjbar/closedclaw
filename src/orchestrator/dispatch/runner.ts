@@ -4,7 +4,7 @@ import { createInterface } from "node:readline";
 import { readAgents } from "../state.js";
 import type { Runner, RunnerOutcome } from "./contract.js";
 
-export type SpawnFn = (cmd: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv }) => ChildProcess;
+export type SpawnFn = (cmd: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; windowsHide?: boolean }) => ChildProcess;
 
 interface Options {
   spawn?: SpawnFn;
@@ -30,6 +30,7 @@ export function createRunner(opts: Options = {}): Runner {
       const child = spawn("claude", args, {
         cwd: record.cwd,
         env: { ...process.env, CLOSEDCLAW_WORKSPACE: workspace },
+        windowsHide: true,
       });
 
       let sessionId = record.sessionId ?? "";

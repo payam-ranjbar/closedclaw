@@ -96,6 +96,21 @@ describe("runner", () => {
       .rejects.toThrow(/boom/);
   });
 
+  it("passes windowsHide:true so spawned claude does not pop a console on Windows", async () => {
+    let capturedOpts: { windowsHide?: boolean } | null = null;
+    const spawnFn: SpawnFn = (_cmd, _args, opts) => {
+      capturedOpts = opts;
+      return makeFakeChild([
+        JSON.stringify({ type: "system", subtype: "init", session_id: "sid" }),
+        JSON.stringify({ type: "result", subtype: "success", result: "ok",
+                         usage: { input_tokens: 1, output_tokens: 1 } }),
+      ]) as never;
+    };
+    const runner = createRunner({ spawn: spawnFn });
+    await runner.run({ agent: "host", payload: "x", workspace: ws });
+    expect(capturedOpts?.windowsHide).toBe(true);
+  });
+
   it("throws when no result message arrives", async () => {
     const lines = [
       JSON.stringify({ type: "system", subtype: "init", session_id: "sid-1" }),

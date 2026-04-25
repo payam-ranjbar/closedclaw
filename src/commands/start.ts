@@ -25,7 +25,7 @@ const realSpawner: Spawner = (workspace, outFd, errFd) => {
   const child: ChildProcess = crossSpawn(
     process.execPath,
     [process.argv[1], "__daemon", "--workspace", workspace],
-    { detached: true, stdio: ["ignore", outFd, errFd] },
+    { detached: true, stdio: ["ignore", outFd, errFd], windowsHide: true },
   );
   if (child.pid === undefined) throw new Error("failed to spawn daemon: no pid");
   const wrapper: SpawnedChild = {
