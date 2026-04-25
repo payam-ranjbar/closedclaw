@@ -20,8 +20,10 @@ function collect(stream: PassThrough): Promise<string> {
 }
 
 class FakeChild extends EventEmitter implements SpawnedChild {
+  killed = false;
   constructor(public pid: number) { super(); }
   unref(): void { /* no-op */ }
+  kill(_signal?: NodeJS.Signals | number): boolean { this.killed = true; return true; }
   once(event: "exit", cb: (code: number | null) => void): this {
     return super.once(event, cb) as this;
   }

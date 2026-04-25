@@ -8,6 +8,7 @@ import {
   clearPidFile,
   isDaemonAlive,
   releaseStartLock,
+  startLockPath,
   writePidFile,
 } from "../orchestrator/daemon.js";
 
@@ -15,6 +16,7 @@ export interface SpawnedChild {
   pid: number;
   unref(): void;
   once(event: "exit", cb: (code: number | null) => void): this;
+  kill(signal?: NodeJS.Signals | number): boolean;
 }
 export type Spawner = (workspace: string, outFd: number, errFd: number) => SpawnedChild;
 
@@ -29,6 +31,7 @@ const realSpawner: Spawner = (workspace, outFd, errFd) => {
     pid: child.pid,
     unref: () => child.unref(),
     once: (event, cb) => { child.once(event, cb); return wrapper; },
+    kill: (signal) => child.kill(signal),
   };
   return wrapper;
 };
@@ -68,6 +71,11 @@ export async function runStart(args: {
       args.out.write(`closedclaw already running (pid ${recheck.pid})\n`);
       return 0;
     }
+    const lockHolder = readLockHolder(args.workspace);
+    if (lockHolder !== null && isPidAliveInline(lockHolder)) {
+      args.err.write(`another start is in progress (launcher pid ${lockHolder}). Wait or remove ${startLockPath(args.workspace)} if it is genuinely stale.\n`);
+      return 1;
+    }
     releaseStartLock(args.workspace);
     try { acquireStartLock(args.workspace); }
     catch (e2) {
@@ -79,15 +87,24 @@ export async function runStart(args: {
     }
   }
 
-  const outFd = openSync(join(args.workspace, "logs", "daemon.out"), "a");
-  const errFd = openSync(join(args.workspace, "logs", "daemon.err"), "a");
+  let spawned: SpawnedChild | undefined;
+  try {
+    const outFd = openSync(join(args.workspace, "logs", "daemon.out"), "a");
+    const errFd = openSync(join(args.workspace, "logs", "daemon.err"), "a");
 
-  const spawner = args.spawner ?? realSpawner;
-  const child = spawner(args.workspace, outFd, errFd);
-  child.unref();
-  writePidFile(args.workspace, child.pid);
+    const spawner = args.spawner ?? realSpawner;
+    spawned = spawner(args.workspace, outFd, errFd);
+    spawned.unref();
+    // PID file before lock release: an observer either sees closedclaw.pid (daemon up) or sees the lock (launcher in flight) — never the gap.
+    writePidFile(args.workspace, spawned.pid);
+  } catch (e) {
+    if (spawned) { try { spawned.kill("SIGTERM"); } catch { /* already dead */ } }
+    releaseStartLock(args.workspace);
+    throw e;
+  }
   releaseStartLock(args.workspace);
 
+  const child = spawned;
   const stabilizeMs = args.stabilizeMs ?? 2000;
   const exited = await raceExit(child, stabilizeMs);
   if (exited.crashed) {
@@ -110,6 +127,29 @@ function raceExit(child: SpawnedChild, ms: number): Promise<{ crashed: boolean; 
       resolve({ crashed: true, code });
     });
   });
+}
+
+function readLockHolder(workspace: string): number | null {
+  let raw: string;
+  try { raw = readFileSync(startLockPath(workspace), "utf8"); }
+  catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  const pid = Number(trimmed);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+function isPidAliveInline(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return false;
+    if (code === "EPERM") return true;
+    throw e;
+  }
 }
 
 function tailFile(path: string, lines: number): string {
