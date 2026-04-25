@@ -328,27 +328,30 @@ describe("TelegramChannel", () => {
   describe("TelegramChannel.pollLoop happy path", () => {
     it("calls getUpdates with offset=0 and timeout=25 on first iteration, dispatches updates, bumps offset", async () => {
       const calls: string[] = [];
-      let updateReturned = false;
+      let getUpdatesCount = 0;
+      let secondCallSeen!: () => void;
+      const secondCall = new Promise<void>((r) => { secondCallSeen = r; });
       const ch = new TelegramChannel({
         fetcher: async (input) => {
           const url = String(input);
           calls.push(url);
           if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
           if (url.includes("/getUpdates")) {
-            if (updateReturned) {
-              return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
+            getUpdatesCount += 1;
+            if (getUpdatesCount === 1) {
+              return new Response(
+                JSON.stringify({
+                  ok: true,
+                  result: [{
+                    update_id: 100,
+                    message: { message_id: 1, chat: { id: 42 }, from: { id: 7 }, text: "hi" },
+                  }],
+                }),
+                { status: 200 },
+              );
             }
-            updateReturned = true;
-            return new Response(
-              JSON.stringify({
-                ok: true,
-                result: [{
-                  update_id: 100,
-                  message: { message_id: 1, chat: { id: 42 }, from: { id: 7 }, text: "hi" },
-                }],
-              }),
-              { status: 200 },
-            );
+            if (getUpdatesCount === 2) secondCallSeen();
+            return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
           }
           return new Response("{}", { status: 200 });
         },
@@ -366,20 +369,17 @@ describe("TelegramChannel", () => {
           config: { token: "bot-token" },
           log: async () => {},
         });
-        // Yield to let the poll loop run a few iterations.
-        await new Promise((r) => setTimeout(r, 30));
+        await secondCall;
         await ch.stop();
         const getUpdatesCalls = calls.filter((u) => u.includes("/getUpdates"));
-        expect(getUpdatesCalls.length).toBeGreaterThanOrEqual(1);
+        expect(getUpdatesCalls.length).toBeGreaterThanOrEqual(2);
         expect(getUpdatesCalls[0]).toMatch(/offset=0/);
         expect(getUpdatesCalls[0]).toMatch(/timeout=25/);
+        expect(getUpdatesCalls[1]).toMatch(/offset=101/);
         expect(submitted).toHaveLength(1);
         expect(submitted[0].text).toBe("hi");
         expect(submitted[0].ref.conversationId).toBe("42");
         expect(submitted[0].ref.userId).toBe("7");
-        if (getUpdatesCalls.length >= 2) {
-          expect(getUpdatesCalls[1]).toMatch(/offset=101/);
-        }
       } finally {
         s.close();
       }

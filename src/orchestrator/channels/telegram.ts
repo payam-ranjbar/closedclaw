@@ -275,13 +275,7 @@ export class TelegramChannel implements Channel {
         throw new Error(`getUpdates HTTP ${response.status}`);
       }
 
-      const body = await response.json() as {
-        ok: boolean;
-        result: Array<{
-          update_id: number;
-          message?: { message_id: number; chat: { id: number }; from?: { id: number }; text?: string };
-        }>;
-      };
+      const body = await response.json() as { ok: boolean; result: TelegramUpdate[] };
 
       for (const u of body.result) {
         if (!u.message?.text || !u.message.chat?.id) {
