@@ -53,7 +53,7 @@ async function checkEnv(ws: string): Promise<DoctorReport["checks"][number]> {
 
 async function checkBinary(bin: string): Promise<DoctorReport["checks"][number]> {
   return new Promise((resolve) => {
-    const child = crossSpawn(bin, ["--version"], { stdio: "ignore" });
+    const child = crossSpawn(bin, ["--version"], { stdio: "ignore", windowsHide: true });
     child.on("error", () => resolve({ name: `${bin} on PATH`, ok: false, detail: "not found" }));
     child.on("exit", (code) => resolve({ name: `${bin} on PATH`, ok: code === 0, detail: code === 0 ? "ok" : `exited ${code}` }));
   });
