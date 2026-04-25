@@ -9,17 +9,15 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       PORT: 3000
     volumes:
       - closedclaw-workspace:/workspace
       - ${HOME}/.claude:/home/agent/.claude:rw
     ports:
       - "3000:3000"
-    depends_on:
-      - cloudflared
 
   cloudflared:
+    profiles: ["webhook"]
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel --no-autoupdate run

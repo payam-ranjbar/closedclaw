@@ -9,7 +9,9 @@ import { createRunner } from "./dispatch/runner.js";
 import { createIngestBus } from "./channels/bus.js";
 import { TelegramChannel } from "./channels/telegram.js";
 import { createCronTrigger } from "./triggers/cron.js";
-import type { Channel } from "./channels/index.js";
+import { resolveBindHost } from "./channels/server-bind.js";
+import type { Channel, Mount, MountOptions, HttpMethod } from "./channels/index.js";
+import type { RequestHandler } from "express";
 
 export interface ServerHandle {
   dispatcher: Dispatcher;
@@ -31,6 +33,14 @@ export async function startServer(workspace: string): Promise<ServerHandle> {
   const app = express();
   const bus = createIngestBus({ dispatcher, channels });
 
+  const mounts: Mount[] = [];
+  const mount = (method: HttpMethod, path: string, handler: RequestHandler, opts?: MountOptions): void => {
+    const isPublic = opts?.public ?? false;
+    mounts.push({ method, path, handler, public: isPublic });
+    const verb = method.toLowerCase() as Lowercase<HttpMethod>;
+    app[verb](path, handler);
+  };
+
   const appendSystemLog = async (entry: object): Promise<void> => {
     await fs.appendFile(
       join(workspace, "system.log"),
@@ -40,6 +50,7 @@ export async function startServer(workspace: string): Promise<ServerHandle> {
 
   await telegram.start({
     app,
+    mount,
     bus,
     config: {
       token: process.env.TELEGRAM_BOT_TOKEN ?? "",
@@ -63,12 +74,17 @@ export async function startServer(workspace: string): Promise<ServerHandle> {
   await cron.start({ bus, channels, registry, workspace });
 
   const httpServer: HttpServer = createServer(app);
-  await new Promise<void>((resolve) => httpServer.listen(port, resolve));
+  const bindHost = resolveBindHost(mounts);
+  if (bindHost !== null) {
+    await new Promise<void>((resolve) => httpServer.listen(port, bindHost, resolve));
+  }
 
   const stop = async (): Promise<void> => {
     await cron.stop();
     await telegram.stop();
-    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    if (bindHost !== null) {
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
   };
 
   return { dispatcher, stop };

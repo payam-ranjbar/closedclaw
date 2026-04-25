@@ -1,11 +1,11 @@
 ---
 id: ADR-0013
 title: Default Telegram ingest to long-polling
-status: proposed
+status: accepted
 architect: payam-ranjbar
 author: Claude Opus 4.7 (1M context)
 created: 2026-04-21
-decided: null
+decided: 2026-04-25
 supersedes: ADR-0008
 superseded_by: null
 ---

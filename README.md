@@ -7,7 +7,6 @@ A small Node app that runs a group of Claude Code agents on your machine. You me
 - Node 20 or newer
 - The claude CLI installed and logged in
 - A Telegram bot token (get one from @BotFather)
-- A public URL pointing at your local port 3000 (a cloudflared tunnel works fine)
 
 ## Setup
 
@@ -16,15 +15,7 @@ npm install -g closedclaw
 closedclaw init
 ```
 
-Open `~/.closedclaw/.env` and fill in:
-
-```
-PORT=3000
-PUBLIC_BASE_URL=https://your-public-url
-TELEGRAM_BOT_TOKEN=your-bot-token
-```
-
-Then:
+Open `~/.closedclaw/.env` and fill in `TELEGRAM_BOT_TOKEN`.
 
 ```
 closedclaw doctor
@@ -43,7 +34,20 @@ Then open `~/.closedclaw/agents/my-agent/CLAUDE.md` and describe what the agent 
 
 ## Docker
 
-There is a `docker-compose.yml` if you'd rather run it in a container. Copy `.env.example` to `.env`, fill it in, then `docker compose up`.
+```
+cp .env.example .env   # then fill in TELEGRAM_BOT_TOKEN
+docker compose up
+```
+
+## Running behind a public URL (advanced)
+
+For multi-instance deployments, lower-latency burst traffic, or push-native channels added later, set `TELEGRAM_INGEST_MODE=webhook` and `PUBLIC_BASE_URL` in `.env`, expose port 3000 via your own tunnel (cloudflared, ngrok, …), and run:
+
+```
+docker compose --profile webhook up
+```
+
+The `cloudflared` sidecar in `docker-compose.yml` activates only on this profile and reads `CLOUDFLARE_TUNNEL_TOKEN` from `.env`.
 
 ## Architecture
 
@@ -58,10 +62,10 @@ Key architectural decisions are documented in [`docs/SWE/adr/`](docs/SWE/adr/).
 | [ADR-0005](docs/SWE/adr/ADR-0005-execute-workers-as-claude-cli-subprocesses.md) | Execute workers as `claude` CLI subprocesses | Accepted |
 | [ADR-0006](docs/SWE/adr/ADR-0006-route-channel-and-trigger-inputs-through-ingestbus.md) | Route channel and trigger inputs through IngestBus | Accepted |
 | [ADR-0007](docs/SWE/adr/ADR-0007-delegate-routing-to-host-agent-via-cli-subcommand.md) | Delegate routing to host agent via CLI subcommand | Accepted |
-| [ADR-0008](docs/SWE/adr/ADR-0008-ingest-telegram-via-webhook-behind-public-tunnel.md) | Ingest Telegram via webhook behind public tunnel | Accepted |
 | [ADR-0009](docs/SWE/adr/ADR-0009-define-scheduled-triggers-as-yaml-specs.md) | Define scheduled triggers as YAML specs | Accepted |
 | [ADR-0010](docs/SWE/adr/ADR-0010-emit-jsonl-telemetry-via-claude-hooks.md) | Emit JSONL telemetry via Claude hooks | Accepted |
 | [ADR-0011](docs/SWE/adr/ADR-0011-scaffold-workspaces-from-bundled-templates.md) | Scaffold workspaces from bundled templates | Accepted |
 | [ADR-0012](docs/SWE/adr/ADR-0012-ship-container-image-with-cloudflare-tunnel-sidecar.md) | Ship container image with Cloudflare tunnel sidecar | Accepted |
+| [ADR-0013](docs/SWE/adr/ADR-0013-default-telegram-ingest-to-long-polling.md) | Default Telegram ingest to long-polling | Accepted |
 
-_12 architectural decisions recorded. Last updated: 2026-04-21._
+_12 architectural decisions recorded. Last updated: 2026-04-25._
