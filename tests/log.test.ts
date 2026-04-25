@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, appendFileSync, truncateSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -64,5 +64,55 @@ describe("log command (one-shot)", () => {
     out.end(); err.end();
     expect(code).toBe(0);
     expect(await collect(out)).toBe(`${longLine}\nlast\n`);
+  });
+});
+
+describe("log command (--follow)", () => {
+  let ws: string;
+
+  beforeEach(() => {
+    ws = mkdtempSync(join(tmpdir(), "cc-log-follow-"));
+  });
+
+  it("emits new content appended after watch begins", async () => {
+    const path = join(ws, "system.log");
+    writeFileSync(path, "initial\n");
+    const out = new PassThrough(), err = new PassThrough();
+    const ac = new AbortController();
+    const promise = runLog({
+      workspace: ws, lines: 10, follow: true,
+      out, err, signal: ac.signal,
+      pollIntervalMs: 50,
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    appendFileSync(path, "appended\n");
+    await new Promise((r) => setTimeout(r, 250));
+    ac.abort();
+    const code = await promise;
+    out.end(); err.end();
+    expect(code).toBe(0);
+    expect(await collect(out)).toContain("appended");
+  });
+
+  it("handles truncation by resetting offset", async () => {
+    const path = join(ws, "system.log");
+    writeFileSync(path, "first\nsecond\n");
+    const out = new PassThrough(), err = new PassThrough();
+    const ac = new AbortController();
+    const promise = runLog({
+      workspace: ws, lines: 10, follow: true,
+      out, err, signal: ac.signal,
+      pollIntervalMs: 50,
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    truncateSync(path, 0);
+    await new Promise((r) => setTimeout(r, 100));
+    appendFileSync(path, "after-truncate\n");
+    await new Promise((r) => setTimeout(r, 250));
+    ac.abort();
+    const code = await promise;
+    out.end(); err.end();
+    expect(code).toBe(0);
+    expect(await collect(out)).toContain("after-truncate");
   });
 });

@@ -7,6 +7,7 @@ import { runInit } from "./commands/init.js";
 import { runStart } from "./commands/start.js";
 import { runAddAgent } from "./commands/add-agent.js";
 import { runStatus } from "./commands/status.js";
+import { runLog } from "./commands/log.js";
 import { runStop } from "./commands/stop.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runHook } from "./commands/hook.js";
@@ -58,6 +59,23 @@ program.command("stop")
       workspace: ws, force: !!opts.force,
       out: process.stdout, err: process.stderr,
     });
+    process.exit(code);
+  });
+
+program.command("log")
+  .option("--workspace <path>")
+  .option("-f, --follow", "stream new lines as they are appended")
+  .option("-n, --lines <n>", "number of lines to print initially", (v) => parseInt(v, 10), 50)
+  .action(async (opts: { workspace?: string; follow?: boolean; lines: number }) => {
+    const ws = resolveWorkspace({ flag: opts.workspace });
+    const ac = new AbortController();
+    const onSig = (): void => ac.abort();
+    process.once("SIGINT", onSig);
+    const code = await runLog({
+      workspace: ws, lines: opts.lines, follow: !!opts.follow,
+      out: process.stdout, err: process.stderr, signal: ac.signal,
+    });
+    process.off("SIGINT", onSig);
     process.exit(code);
   });
 
