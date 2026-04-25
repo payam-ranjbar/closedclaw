@@ -41,6 +41,7 @@ describe("TelegramChannel", () => {
     const channel = new TelegramChannel({
       fetcher: async () => new Response("{}"),
       secretOverride: secret,
+      modeOverride: "webhook",
     });
     await channel.start({
       app,
@@ -135,6 +136,7 @@ describe("TelegramChannel", () => {
     const ch = new TelegramChannel({
       fetcher: async () => new Response("{}", { status: 200 }),
       secretOverride: secret,
+      modeOverride: "webhook",
     });
     const { app: app2, server: server2 } = await startApp();
     try {
@@ -162,6 +164,7 @@ describe("TelegramChannel", () => {
     const ch = new TelegramChannel({
       fetcher: async () => new Response("{}", { status: 500 }),
       secretOverride: secret,
+      modeOverride: "webhook",
     });
     const { app: app2, server: server2 } = await startApp();
     try {
@@ -191,6 +194,7 @@ describe("TelegramChannel", () => {
     const ch = new TelegramChannel({
       fetcher: async () => new Response("{}"),
       secretOverride: secret,
+      modeOverride: "webhook",
     });
     await ch.start({
       app: app2,
@@ -227,6 +231,7 @@ describe("TelegramChannel", () => {
     const ch = new TelegramChannel({
       fetcher: async (input) => { calls.push(String(input)); return new Response("{}"); },
       secretOverride: secret,
+      modeOverride: "webhook",
     });
     const { app: app2, server: server2 } = await startApp();
     try {
@@ -259,6 +264,7 @@ describe("TelegramChannel", () => {
     const ch = new TelegramChannel({
       fetcher: async (input) => { calls.push(String(input)); return new Response("{}"); },
       secretOverride: secret,
+      modeOverride: "webhook",
     });
     const { app: app2, server: server2 } = await startApp();
     try {
@@ -291,6 +297,7 @@ describe("TelegramChannel", () => {
     const ch = new TelegramChannel({
       fetcher: async (input) => { calls.push(String(input)); return new Response("{}"); },
       secretOverride: secret,
+      modeOverride: "webhook",
     });
     const { app: app2, server: server2 } = await startApp();
     try {
@@ -316,5 +323,60 @@ describe("TelegramChannel", () => {
       server2.close();
       vi.useRealTimers();
     }
+  });
+
+  describe("TelegramChannel.deleteWebhook (private, exercised via polling startup)", () => {
+    it("calls /deleteWebhook once on success", async () => {
+      const calls: string[] = [];
+      const ch = new TelegramChannel({
+        fetcher: async (input) => { calls.push(String(input)); return new Response("{}", { status: 200 }); },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async () => {},
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async () => {},
+        });
+        await ch.stop();
+        expect(calls.filter((u) => u.includes("/deleteWebhook"))).toHaveLength(1);
+      } finally {
+        s.close();
+      }
+    });
+
+    it("retries deleteWebhook up to 3 times on failure, then logs fatal", async () => {
+      const log: any[] = [];
+      let calls = 0;
+      const ch = new TelegramChannel({
+        fetcher: async () => { calls++; return new Response("{}", { status: 500 }); },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async () => {},
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async (e) => { log.push(e); },
+        });
+        await ch.stop();
+        expect(calls).toBe(3);
+        expect(log).toContainEqual(expect.objectContaining({
+          event: "telegram.polling.fatal",
+          reason: "webhook-cleanup",
+        }));
+      } finally {
+        s.close();
+      }
+    });
   });
 });

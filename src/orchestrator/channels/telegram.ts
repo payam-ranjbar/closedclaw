@@ -22,6 +22,8 @@ const defaultSleep: Sleeper = (ms, signal) =>
     signal.addEventListener("abort", onAbort, { once: true });
   });
 
+const DELETE_WEBHOOK_RETRIES = 3;
+
 interface Options {
   fetcher?: Fetcher;
   secretOverride?: string;
@@ -40,7 +42,12 @@ type TelegramLogEvent =
   | { event: "telegram.webhook.rejected";  reason: "bad-secret" }
   | { event: "telegram.reply.sent";        chatId: string; status: number }
   | { event: "telegram.reply.failed";      chatId: string; error: string }
-  | { event: "telegram.ingest.failed";     chatId: string; error: string };
+  | { event: "telegram.ingest.failed";     chatId: string; error: string }
+  | { event: "telegram.polling.started";   offset: number }
+  | { event: "telegram.polling.stopped";   reason: "shutdown" | "fatal" }
+  | { event: "telegram.polling.fatal";     reason: "auth" | "webhook-cleanup"; error: string }
+  | { event: "telegram.polling.transient"; error: string; retryAfterMs: number }
+  | { event: "telegram.polling.conflict";  action: "redelete-webhook" };
 
 export class TelegramChannel implements Channel {
   readonly name = "telegram";
@@ -51,12 +58,12 @@ export class TelegramChannel implements Channel {
   private modeOverride: "polling" | "webhook" | null;
   private logEntry: ChannelContext["log"] = async () => {};
   private timers = new Map<string, NodeJS.Timeout>();
+  private shutdownAbort: AbortController | null = null;
 
   constructor(private readonly opts: Options = {}) {
     this.fetcher = opts.fetcher ?? fetch;
     this.sleep = opts.sleep ?? defaultSleep;
     this.modeOverride = opts.modeOverride ?? null;
-    void (this.sleep, this.modeOverride); // satisfy noUnusedLocals; T5 reads both
   }
 
   async start(ctx: ChannelContext): Promise<void> {
@@ -67,6 +74,25 @@ export class TelegramChannel implements Channel {
       ?? "";
     this.logEntry = ctx.log;
 
+    const mode = this.modeOverride
+      ?? (process.env.TELEGRAM_INGEST_MODE === "webhook" ? "webhook" : "polling");
+
+    if (mode === "polling") {
+      this.shutdownAbort = new AbortController();
+      const cleaned = await this.deleteWebhookWithRetry(DELETE_WEBHOOK_RETRIES, this.shutdownAbort.signal);
+      if (!cleaned) {
+        await this.log({
+          event: "telegram.polling.fatal",
+          reason: "webhook-cleanup",
+          error: "deleteWebhook failed after retries",
+        });
+        return;
+      }
+      // Poll loop will be spawned in Task 7.
+      return;
+    }
+
+    // mode === "webhook"
     ctx.mount("POST", "/webhooks/telegram", express.json());
     ctx.mount("POST", "/webhooks/telegram", async (req, res) => {
       if (req.header("x-telegram-bot-api-secret-token") !== this.secret) {
@@ -111,6 +137,7 @@ export class TelegramChannel implements Channel {
   }
 
   async stop(): Promise<void> {
+    if (this.shutdownAbort) this.shutdownAbort.abort();
     for (const handle of this.timers.values()) clearInterval(handle);
     this.timers.clear();
   }
@@ -171,5 +198,29 @@ export class TelegramChannel implements Channel {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, secret_token: this.secret }),
     });
+  }
+
+  private async deleteWebhookOnce(): Promise<{ ok: boolean; status: number }> {
+    if (!this.token) return { ok: true, status: 0 };
+    const res = await this.fetcher(`https://api.telegram.org/bot${this.token}/deleteWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ drop_pending_updates: false }),
+    });
+    return { ok: res.status >= 200 && res.status < 300, status: res.status };
+  }
+
+  private async deleteWebhookWithRetry(maxRetries: number, signal: AbortSignal): Promise<boolean> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (signal.aborted) return false;
+      try {
+        const r = await this.deleteWebhookOnce();
+        if (r.ok) return true;
+      } catch {
+        // network error — fall through to backoff
+      }
+      if (attempt < maxRetries) await this.sleep(1000 * 2 ** (attempt - 1), signal);
+    }
+    return false;
   }
 }
