@@ -1,6 +1,6 @@
 import express from "express";
 import { fetch } from "undici";
-import type { Channel, ChannelContext, ChannelRef } from "./index.js";
+import type { Channel, ChannelContext, ChannelRef, IngestBus } from "./index.js";
 
 type Fetcher = typeof fetch;
 type Sleeper = (ms: number, signal: AbortSignal) => Promise<void>;
@@ -23,6 +23,7 @@ const defaultSleep: Sleeper = (ms, signal) =>
   });
 
 const DELETE_WEBHOOK_RETRIES = 3;
+const LONG_POLL_TIMEOUT_SECONDS = 25;
 
 export type ErrorInput =
   | { kind: "http"; status: number; body: { parameters?: { retry_after?: number } } }
@@ -109,6 +110,13 @@ export class TelegramChannel implements Channel {
         });
         return;
       }
+      this.pollLoop(this.shutdownAbort.signal, ctx.bus).catch(async (err) => {
+        await this.log({
+          event: "telegram.polling.fatal",
+          reason: "auth",
+          error: String(err),
+        });
+      });
       return;
     }
 
@@ -245,5 +253,66 @@ export class TelegramChannel implements Channel {
       if (attempt < maxRetries) await this.sleep(1000 * 2 ** (attempt - 1), signal);
     }
     return false;
+  }
+
+  private async pollLoop(signal: AbortSignal, bus: IngestBus): Promise<void> {
+    let offset = 0;
+    await this.log({ event: "telegram.polling.started", offset });
+
+    while (!signal.aborted) {
+      let response: Response;
+      try {
+        response = await this.fetcher(
+          `https://api.telegram.org/bot${this.token}/getUpdates?offset=${offset}&timeout=${LONG_POLL_TIMEOUT_SECONDS}`,
+          { method: "GET", signal },
+        );
+      } catch (err) {
+        if (signal.aborted) break;
+        throw err;
+      }
+
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`getUpdates HTTP ${response.status}`);
+      }
+
+      const body = await response.json() as {
+        ok: boolean;
+        result: Array<{
+          update_id: number;
+          message?: { message_id: number; chat: { id: number }; from?: { id: number }; text?: string };
+        }>;
+      };
+
+      for (const u of body.result) {
+        if (!u.message?.text || !u.message.chat?.id) {
+          offset = u.update_id + 1;
+          continue;
+        }
+        const chatId = String(u.message.chat.id);
+        const ref: ChannelRef = {
+          channel: "telegram",
+          conversationId: chatId,
+          userId: u.message.from ? String(u.message.from.id) : undefined,
+          raw: u,
+        };
+        await this.log({
+          event: "telegram.message.received",
+          chatId,
+          userId: ref.userId,
+          messageId: u.message.message_id,
+          textLength: u.message.text.length,
+        });
+        try {
+          await bus.submit(ref, u.message.text);
+        } catch (err) {
+          await this.log({ event: "telegram.ingest.failed", chatId, error: String(err) });
+        }
+        offset = u.update_id + 1;
+      }
+      // yield to the macrotask queue so the event loop stays responsive between iterations
+      await new Promise<void>((r) => setImmediate(r));
+    }
+
+    await this.log({ event: "telegram.polling.stopped", reason: "shutdown" });
   }
 }

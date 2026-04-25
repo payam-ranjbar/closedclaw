@@ -325,6 +325,67 @@ describe("TelegramChannel", () => {
     }
   });
 
+  describe("TelegramChannel.pollLoop happy path", () => {
+    it("calls getUpdates with offset=0 and timeout=25 on first iteration, dispatches updates, bumps offset", async () => {
+      const calls: string[] = [];
+      let updateReturned = false;
+      const ch = new TelegramChannel({
+        fetcher: async (input) => {
+          const url = String(input);
+          calls.push(url);
+          if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
+          if (url.includes("/getUpdates")) {
+            if (updateReturned) {
+              return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
+            }
+            updateReturned = true;
+            return new Response(
+              JSON.stringify({
+                ok: true,
+                result: [{
+                  update_id: 100,
+                  message: { message_id: 1, chat: { id: 42 }, from: { id: 7 }, text: "hi" },
+                }],
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async () => {},
+      });
+      const submitted: { ref: ChannelRef; text: string }[] = [];
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async (ref, text) => { submitted.push({ ref, text }); } },
+          config: { token: "bot-token" },
+          log: async () => {},
+        });
+        // Yield to let the poll loop run a few iterations.
+        await new Promise((r) => setTimeout(r, 30));
+        await ch.stop();
+        const getUpdatesCalls = calls.filter((u) => u.includes("/getUpdates"));
+        expect(getUpdatesCalls.length).toBeGreaterThanOrEqual(1);
+        expect(getUpdatesCalls[0]).toMatch(/offset=0/);
+        expect(getUpdatesCalls[0]).toMatch(/timeout=25/);
+        expect(submitted).toHaveLength(1);
+        expect(submitted[0].text).toBe("hi");
+        expect(submitted[0].ref.conversationId).toBe("42");
+        expect(submitted[0].ref.userId).toBe("7");
+        if (getUpdatesCalls.length >= 2) {
+          expect(getUpdatesCalls[1]).toMatch(/offset=101/);
+        }
+      } finally {
+        s.close();
+      }
+    });
+  });
+
   describe("TelegramChannel.deleteWebhook (private, exercised via polling startup)", () => {
     it("calls /deleteWebhook once on success", async () => {
       const calls: string[] = [];
