@@ -25,6 +25,8 @@ const defaultSleep: Sleeper = (ms, signal) =>
 const DELETE_WEBHOOK_RETRIES = 3;
 const LONG_POLL_TIMEOUT_SECONDS = 25;
 const SHUTDOWN_GRACE_MS = 2000;
+const BACKOFF_INITIAL_MS = 1000;
+const BACKOFF_MAX_MS = 30000;
 
 export type ErrorInput =
   | { kind: "http"; status: number; body: { parameters?: { retry_after?: number } } }
@@ -225,6 +227,11 @@ export class TelegramChannel implements Channel {
     }
   }
 
+  private backoffMs(consecutiveFailures: number): number {
+    const exponent = Math.min(consecutiveFailures - 1, 5);
+    return Math.min(BACKOFF_INITIAL_MS * 2 ** exponent, BACKOFF_MAX_MS);
+  }
+
   private log(event: TelegramLogEvent): Promise<void> {
     return this.logEntry({ channel: "telegram", ...event });
   }
@@ -264,10 +271,12 @@ export class TelegramChannel implements Channel {
 
   private async pollLoop(signal: AbortSignal, bus: IngestBus): Promise<void> {
     let offset = 0;
+    let consecutiveFailures = 0;
     await this.log({ event: "telegram.polling.started", offset });
 
     while (!signal.aborted) {
-      let response: Awaited<ReturnType<Fetcher>>;
+      let response: Awaited<ReturnType<Fetcher>> | null = null;
+      let networkErr: unknown = null;
       try {
         response = await this.fetcher(
           `https://api.telegram.org/bot${this.token}/getUpdates?offset=${offset}&timeout=${LONG_POLL_TIMEOUT_SECONDS}`,
@@ -275,14 +284,45 @@ export class TelegramChannel implements Channel {
         );
       } catch (err) {
         if (signal.aborted || (err instanceof Error && err.name === "AbortError")) break;
-        throw err;
+        networkErr = err;
       }
 
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(`getUpdates HTTP ${response.status}`);
+      if (networkErr) {
+        consecutiveFailures += 1;
+        const delay = this.backoffMs(consecutiveFailures);
+        await this.sleep(delay, signal);
+        continue;
       }
 
-      const body = await response.json() as { ok: boolean; result: TelegramUpdate[] };
+      if (response!.status < 200 || response!.status >= 300) {
+        let body: { parameters?: { retry_after?: number } } = {};
+        try { body = await response!.json() as typeof body; } catch { /* swallow */ }
+        const cls = classifyError({ kind: "http", status: response!.status, body });
+        if (cls.kind === "fatal-auth") {
+          await this.log({
+            event: "telegram.polling.fatal",
+            reason: "auth",
+            error: `HTTP ${response!.status}`,
+          });
+          return;
+        }
+        consecutiveFailures += 1;
+        let delay: number;
+        if (cls.kind === "rate-limit") {
+          delay = cls.delayMs;
+        } else {
+          delay = this.backoffMs(consecutiveFailures);
+        }
+        if (cls.kind === "conflict") {
+          await this.deleteWebhookOnce().catch(() => undefined);
+          await this.log({ event: "telegram.polling.conflict", action: "redelete-webhook" });
+        }
+        await this.sleep(delay, signal);
+        continue;
+      }
+
+      consecutiveFailures = 0;
+      const body = await response!.json() as { ok: boolean; result: TelegramUpdate[] };
 
       for (const u of body.result) {
         if (!u.message?.text || !u.message.chat?.id) {
@@ -310,6 +350,7 @@ export class TelegramChannel implements Channel {
         }
         offset = u.update_id + 1;
       }
+
       // yield to the macrotask queue so the event loop stays responsive between iterations
       await new Promise<void>((r) => setImmediate(r));
     }

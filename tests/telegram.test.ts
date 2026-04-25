@@ -519,6 +519,126 @@ describe("TelegramChannel", () => {
       }
     });
   });
+
+  describe("TelegramChannel polling error handling", () => {
+    it("backs off on 5xx with 1s, 2s, 4s ladder", async () => {
+      const sleeps: number[] = [];
+      let getUpdatesCalls = 0;
+      let fourthCallSeen!: () => void;
+      const fourthCall = new Promise<void>((r) => { fourthCallSeen = r; });
+      const ch = new TelegramChannel({
+        fetcher: async (input) => {
+          const url = String(input);
+          if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
+          if (url.includes("/getUpdates")) {
+            getUpdatesCalls += 1;
+            if (getUpdatesCalls <= 3) return new Response("{}", { status: 502 });
+            if (getUpdatesCalls === 4) fourthCallSeen();
+            return await new Promise<Response>(() => {});
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async (ms) => { sleeps.push(ms); },
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async () => {},
+        });
+        await fourthCall;
+        await ch.stop();
+        expect(sleeps.slice(0, 3)).toEqual([1000, 2000, 4000]);
+      } finally {
+        s.close();
+      }
+    });
+
+    it("backs off on network error with same ladder", async () => {
+      const sleeps: number[] = [];
+      let getUpdatesCalls = 0;
+      let thirdCallSeen!: () => void;
+      const thirdCall = new Promise<void>((r) => { thirdCallSeen = r; });
+      const ch = new TelegramChannel({
+        fetcher: async (input) => {
+          const url = String(input);
+          if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
+          if (url.includes("/getUpdates")) {
+            getUpdatesCalls += 1;
+            if (getUpdatesCalls <= 2) throw new Error("ECONNRESET");
+            if (getUpdatesCalls === 3) thirdCallSeen();
+            return await new Promise<Response>(() => {});
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async (ms) => { sleeps.push(ms); },
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async () => {},
+        });
+        await thirdCall;
+        await ch.stop();
+        expect(sleeps.slice(0, 2)).toEqual([1000, 2000]);
+      } finally {
+        s.close();
+      }
+    });
+
+    it("resets backoff after a successful call", async () => {
+      const sleeps: number[] = [];
+      let getUpdatesCalls = 0;
+      let fourthCallSeen!: () => void;
+      const fourthCall = new Promise<void>((r) => { fourthCallSeen = r; });
+      const ch = new TelegramChannel({
+        fetcher: async (input) => {
+          const url = String(input);
+          if (url.includes("/deleteWebhook")) return new Response("{}", { status: 200 });
+          if (url.includes("/getUpdates")) {
+            getUpdatesCalls += 1;
+            if (getUpdatesCalls === 1) return new Response("{}", { status: 502 });
+            if (getUpdatesCalls === 2) return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
+            if (getUpdatesCalls === 3) return new Response("{}", { status: 502 });
+            if (getUpdatesCalls === 4) fourthCallSeen();
+            return await new Promise<Response>(() => {});
+          }
+          return new Response("{}", { status: 200 });
+        },
+        secretOverride: "s",
+        modeOverride: "polling",
+        sleep: async (ms) => { sleeps.push(ms); },
+      });
+      const { app: a, server: s } = await startApp();
+      try {
+        await ch.start({
+          app: a,
+          mount: mountFor(a),
+          bus: { submit: async () => {} },
+          config: { token: "bot-token" },
+          log: async () => {},
+        });
+        await fourthCall;
+        await ch.stop();
+        // First sleep after first 502 = 1000. Second 502 (after success reset) = 1000 again, not 2000.
+        expect(sleeps[0]).toBe(1000);
+        expect(sleeps[1]).toBe(1000);
+      } finally {
+        s.close();
+      }
+    });
+  });
 });
 
 describe("classifyError", () => {
