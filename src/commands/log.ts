@@ -47,14 +47,10 @@ export async function runLog(args: {
     else throw e;
   }
   if (!exists) {
-    if (!args.follow) {
-      args.out.write("(no system.log yet)\n");
-      return 0;
-    }
-  } else {
-    const tail = tailBytes(path, args.lines);
-    args.out.write(tail);
+    args.out.write("(no system.log yet)\n");
+    return 0;
   }
-  if (!args.follow) return 0;
+  const tail = tailBytes(path, args.lines);
+  args.out.write(tail);
   return 0;
 }

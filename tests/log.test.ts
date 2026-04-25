@@ -55,4 +55,14 @@ describe("log command (one-shot)", () => {
     expect(code).toBe(0);
     expect(await collect(out)).toBe("");
   });
+
+  it("handles a line longer than the read chunk", async () => {
+    const longLine = "x".repeat(5000);
+    writeFileSync(join(ws, "system.log"), `first\n${longLine}\nlast\n`);
+    const out = new PassThrough(), err = new PassThrough();
+    const code = await runLog({ workspace: ws, lines: 2, follow: false, out, err });
+    out.end(); err.end();
+    expect(code).toBe(0);
+    expect(await collect(out)).toBe(`${longLine}\nlast\n`);
+  });
 });
