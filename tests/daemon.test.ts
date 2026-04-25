@@ -11,6 +11,7 @@ import {
   acquireStartLock,
   releaseStartLock,
   isDaemonAlive,
+  isPidAlive,
 } from "../src/orchestrator/daemon.js";
 
 describe("daemon: PID file", () => {
@@ -116,5 +117,15 @@ describe("daemon: isDaemonAlive", () => {
     mkdirSync(join(ws, "state"), { recursive: true });
     writeFileSync(pidFilePath(ws), "garbage");
     expect(isDaemonAlive(ws)).toEqual({ running: false });
+  });
+});
+
+describe("daemon: isPidAlive", () => {
+  it("returns true for our own pid", () => {
+    expect(isPidAlive(process.pid)).toBe(true);
+  });
+
+  it("returns false for a pid that cannot exist", () => {
+    expect(isPidAlive(2 ** 30)).toBe(false);
   });
 });
