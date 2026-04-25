@@ -24,6 +24,27 @@ const defaultSleep: Sleeper = (ms, signal) =>
 
 const DELETE_WEBHOOK_RETRIES = 3;
 
+export type ErrorInput =
+  | { kind: "http"; status: number; body: { parameters?: { retry_after?: number } } }
+  | { kind: "network"; error: unknown };
+
+export type ClassifiedError =
+  | { kind: "fatal-auth" }
+  | { kind: "rate-limit"; delayMs: number }
+  | { kind: "conflict" }
+  | { kind: "transient" };
+
+export function classifyError(input: ErrorInput): ClassifiedError {
+  if (input.kind === "network") return { kind: "transient" };
+  if (input.status === 401) return { kind: "fatal-auth" };
+  if (input.status === 409) return { kind: "conflict" };
+  if (input.status === 429) {
+    const retryAfter = input.body.parameters?.retry_after ?? 1;
+    return { kind: "rate-limit", delayMs: retryAfter * 1000 };
+  }
+  return { kind: "transient" };
+}
+
 interface Options {
   fetcher?: Fetcher;
   secretOverride?: string;

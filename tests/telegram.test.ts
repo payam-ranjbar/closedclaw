@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import express from "express";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { TelegramChannel } from "../src/orchestrator/channels/telegram.js";
+import { TelegramChannel, classifyError } from "../src/orchestrator/channels/telegram.js";
 import type { ChannelRef } from "../src/orchestrator/channels/index.js";
 
 function startApp(): Promise<{ app: express.Express; server: Server; port: number }> {
@@ -378,5 +378,33 @@ describe("TelegramChannel", () => {
         s.close();
       }
     });
+  });
+});
+
+describe("classifyError", () => {
+  it("classifies 401 as fatal-auth", () => {
+    expect(classifyError({ kind: "http", status: 401, body: {} })).toEqual({ kind: "fatal-auth" });
+  });
+
+  it("classifies 429 with retry_after as rate-limit", () => {
+    expect(classifyError({ kind: "http", status: 429, body: { parameters: { retry_after: 4 } } }))
+      .toEqual({ kind: "rate-limit", delayMs: 4000 });
+  });
+
+  it("classifies 429 without retry_after with a 1s default", () => {
+    expect(classifyError({ kind: "http", status: 429, body: {} }))
+      .toEqual({ kind: "rate-limit", delayMs: 1000 });
+  });
+
+  it("classifies 409 as conflict", () => {
+    expect(classifyError({ kind: "http", status: 409, body: {} }).kind).toBe("conflict");
+  });
+
+  it("classifies 5xx as transient", () => {
+    expect(classifyError({ kind: "http", status: 502, body: {} }).kind).toBe("transient");
+  });
+
+  it("classifies network errors as transient", () => {
+    expect(classifyError({ kind: "network", error: new Error("ECONNRESET") }).kind).toBe("transient");
   });
 });
