@@ -167,10 +167,7 @@ export class TelegramChannel implements Channel {
   }
 
   async stop(): Promise<void> {
-    if (this.shutdownAbort) {
-      this.shutdownAbort.abort();
-      this.shutdownAbort = null;
-    }
+    if (this.shutdownAbort) this.shutdownAbort.abort();
     for (const handle of this.timers.values()) clearInterval(handle);
     this.timers.clear();
     if (this.loopPromise) {
@@ -180,6 +177,7 @@ export class TelegramChannel implements Channel {
       ]);
       this.loopPromise = null;
     }
+    this.shutdownAbort = null;
   }
 
   async reply(ref: ChannelRef, text: string): Promise<void> {
