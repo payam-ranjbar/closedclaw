@@ -3,10 +3,30 @@ import { fetch } from "undici";
 import type { Channel, ChannelContext, ChannelRef } from "./index.js";
 
 type Fetcher = typeof fetch;
+type Sleeper = (ms: number, signal: AbortSignal) => Promise<void>;
+
+const defaultSleep: Sleeper = (ms, signal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const handle = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(handle);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 
 interface Options {
   fetcher?: Fetcher;
   secretOverride?: string;
+  sleep?: Sleeper;
+  modeOverride?: "polling" | "webhook";
 }
 
 interface TelegramUpdate {
@@ -27,11 +47,16 @@ export class TelegramChannel implements Channel {
   private secret = "";
   private token = "";
   private fetcher: Fetcher;
+  private sleep: Sleeper;
+  private modeOverride: "polling" | "webhook" | null;
   private logEntry: ChannelContext["log"] = async () => {};
   private timers = new Map<string, NodeJS.Timeout>();
 
   constructor(private readonly opts: Options = {}) {
     this.fetcher = opts.fetcher ?? fetch;
+    this.sleep = opts.sleep ?? defaultSleep;
+    this.modeOverride = opts.modeOverride ?? null;
+    void (this.sleep, this.modeOverride); // satisfy noUnusedLocals; T5 reads both
   }
 
   async start(ctx: ChannelContext): Promise<void> {
