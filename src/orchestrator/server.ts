@@ -71,9 +71,5 @@ export async function startServer(workspace: string): Promise<ServerHandle> {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   };
 
-  const onSignal = async (): Promise<void> => { await stop(); process.exit(0); };
-  process.once("SIGTERM", onSignal);
-  process.once("SIGINT", onSignal);
-
   return { dispatcher, stop };
 }
