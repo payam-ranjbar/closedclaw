@@ -25,4 +25,8 @@ describe("resolveBindHost", () => {
   it("returns 0.0.0.0 when both private and public routes are mounted", () => {
     expect(resolveBindHost([m("/healthz", false), m("/webhooks/telegram", true)])).toBe("0.0.0.0");
   });
+
+  it("returns 0.0.0.0 when multiple public routes are mounted", () => {
+    expect(resolveBindHost([m("/a", true), m("/b", true)])).toBe("0.0.0.0");
+  });
 });
